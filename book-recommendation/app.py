@@ -1,32 +1,45 @@
-from flask import Flask, render_template, request
-import requests
+"""Beryl's Flask discovery app, extended with normalized metadata and API states."""
+from flask import Flask, render_template, request, jsonify
+import requests, time, re
+from collections import OrderedDict
+from pathlib import Path
+app = Flask(__name__, root_path=str(Path(__file__).resolve().parent))
+cache=OrderedDict()
 
-app = Flask(__name__)
-
-# Function to get book recommendations from Google Books API
-def get_books(query):
-    url = f'https://www.googleapis.com/books/v1/volumes?q={query}&maxResults=10'
-    response = requests.get(url)
-    if response.status_code == 200:
-        data = response.json()
-        books = []
-        for item in data.get('items', []):
-            title = item['volumeInfo'].get('title', 'N/A')
-            authors = ', '.join(item['volumeInfo'].get('authors', 'Unknown'))
-            books.append({'title': title, 'authors': authors})
-        return books
-    return []
+def get_books(query, page=1, sort='relevance'):
+    key=(query,page,sort)
+    if key in cache and time.monotonic()-cache[key][0]<600:return cache[key][1]
+    params={'q':query,'page':page,'limit':12,'fields':'key,title,author_name,first_publish_year,cover_i,edition_count,subject'}
+    if sort=='new':params['sort']='new'
+    response=requests.get('https://openlibrary.org/search.json',params=params,headers={'User-Agent':'BerylBookDiscovery/1.0 (portfolio student project)'},timeout=12)
+    response.raise_for_status();data=response.json()
+    books=[]
+    for item in data.get('docs',[]):
+        if not re.fullmatch(r'/works/OL\d+W',item.get('key','')):continue
+        books.append({'id':item['key'],'title':item.get('title') or 'Untitled','authors':', '.join(item.get('author_name') or ['Unknown author']),'year':item.get('first_publish_year'),'cover':f"https://covers.openlibrary.org/b/id/{item['cover_i']}-M.jpg" if item.get('cover_i') else None,'editions':item.get('edition_count',0),'subjects':(item.get('subject') or [])[:6],'url':'https://openlibrary.org'+item['key']})
+    result={'books':books,'total':data.get('numFound',0),'page':page,'source':'Open Library'}
+    cache[key]=(time.monotonic(),result)
+    if len(cache)>128:cache.popitem(last=False)
+    return result
 
 @app.route('/')
-def index():
-    return render_template('index.html')
+def index():return render_template('index.html')
 
-@app.route('/recommendations', methods=['POST'])
+@app.route('/recommendations', methods=['POST','GET'])
 def recommendations():
-    query = request.form['query']
-    books = get_books(query)
-    return render_template('recommendations.html', books=books, query=query)
+    query=(request.values.get('query') or '').strip()[:200]
+    try:result=get_books(query) if query else {'books':[]};error=None
+    except (requests.RequestException,ValueError):result={'books':[]};error='Book search is temporarily unavailable. Please try again.'
+    return render_template('recommendations.html',books=result['books'],query=query,error=error)
 
-if __name__ == '__main__':
-    app.run(debug=True, port=5001)
+@app.get('/api/books')
+def api_books():
+    query=(request.args.get('q') or '').strip()
+    if not query or len(query)>200:return jsonify(error='Enter a title, author or subject (up to 200 characters).'),400
+    try:page=int(request.args.get('page','1'))
+    except ValueError:return jsonify(error='Invalid page.'),400
+    if not 1<=page<=100:return jsonify(error='Invalid page.'),400
+    try:return jsonify(get_books(query,page,'new' if request.args.get('sort')=='new' else 'relevance'))
+    except (requests.RequestException,ValueError):return jsonify(error='Book search is temporarily unavailable. Please try again.'),502
 
+if __name__=='__main__':app.run(port=5001)

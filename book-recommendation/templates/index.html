@@ -1,18 +1,1 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Book Recommendation System</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-</head>
-<body>
-    <div class="container">
-        <h1>Find Your Next Book</h1>
-        <form action="/recommendations" method="post">
-            <input type="text" name="query" placeholder="Enter a topic or title" required>
-            <button type="submit">Search</button>
-        </form>
-    </div>
-</body>
-</html>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Margin — Find your next book</title><meta name="description" content="Follow your curiosity. Discover books and save a reading list."><link rel="stylesheet" href="{{ url_for('static',filename='style.css') }}"></head><body><a class="skip" href="#main">Skip to books</a><header><a href="./" class="brand">margin<span>A PLACE FOR YOUR NEXT CHAPTER</span></a><nav aria-label="Book views"><button id="discover" aria-pressed="true">Discover</button><button id="saved" aria-pressed="false">Reading list <span id="count">0</span></button></nav></header><main id="main"><div class="opening"><p class="eyebrow">THE PLEASURE OF FINDING SOMETHING GOOD</p><h1>A little curiosity.<br><em>A whole other world.</em></h1><p>Find a title, follow an author, or get lost in a subject.</p></div><form id="search-form" action="recommendations" method="post"><label for="query">Title, author or subject</label><div class="search"><input id="query" name="query" maxlength="200" required placeholder="Where will you start?"><button class="primary">Find books</button></div><div class="refinements"><label for="sort">Order by</label><select id="sort"><option value="relevance">Relevance</option><option value="new">Newest first</option></select></div></form><div class="subjects"><span>Follow a thread</span><button data-query="subject:fantasy">Fantasy</button><button data-query="subject:romance">Romance</button><button data-query="subject:science_fiction">Science fiction</button><button data-query="subject:art">Art & making</button></div><div class="shelf-heading"><h2 id="shelf-title">On the shelf</h2><p id="status" role="status"></p></div><section id="books" class="book-grid" aria-label="Book results"></section><button id="more" hidden>Next page</button><noscript><p>Use the search form above to browse without JavaScript. Reading-list features need JavaScript.</p></noscript></main><footer><span>Made by Beryl Koko</span><span>Catalog & covers: <a href="https://openlibrary.org">Open Library</a> · Reading list saved on this device</span></footer><dialog id="detail" aria-labelledby="book-title"><button id="close">Close ✕</button><div id="detail-body"></div></dialog><script type="module" src="{{ url_for('static',filename='books.js') }}"></script></body></html>
