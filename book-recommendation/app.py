@@ -16,7 +16,7 @@ def get_books(query, page=1, sort='relevance'):
     books=[]
     for item in data.get('docs',[]):
         if not re.fullmatch(r'/works/OL\d+W',item.get('key','')):continue
-        books.append({'id':item['key'],'title':item.get('title') or 'Untitled','authors':', '.join(item.get('author_name') or ['Unknown author']),'year':item.get('first_publish_year'),'cover':f"https://covers.openlibrary.org/b/id/{item['cover_i']}-M.jpg" if item.get('cover_i') else None,'editions':item.get('edition_count',0),'subjects':(item.get('subject') or [])[:6],'url':'https://openlibrary.org'+item['key']})
+        books.append({'id':item['key'],'title':item.get('title') or 'Untitled','authors':', '.join(item.get('author_name') or ['Unknown author']),'year':item.get('first_publish_year'),'cover':f"https://covers.openlibrary.org/b/id/{item['cover_i']}-M.jpg" if item.get('cover_i') else None,'editions':item.get('edition_count',0),'subjects':(item.get('subject') or [])[:24],'url':'https://openlibrary.org'+item['key']})
     result={'books':books,'total':data.get('numFound',0),'page':page,'source':'Open Library'}
     cache[key]=(time.monotonic(),result)
     if len(cache)>128:cache.popitem(last=False)
