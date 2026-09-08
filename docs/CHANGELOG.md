@@ -15,3 +15,8 @@ Added a seed-book flow, selectable subject preferences, author/year constraints,
 The direct live catalog request was stopped because network approval was cancelled; preview requests also return 502. No successful live recommendation flow is claimed for this revision.
 
 2026-09-08: Live standalone API verification passed. Hosted preview integration remains unverified; no release-ready claim.
+
+
+## Browser QA — 2026-09-08
+
+Browser QA found a coauthor filtering defect: a different-author request could include a joint work by the seed author. Matching now compares individual author names (legacy records use a fallback); provider adapters preserve the author array and deduplicate display names. Added a regression test. Fixed singular reading-list count.
