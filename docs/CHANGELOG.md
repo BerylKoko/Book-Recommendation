@@ -10,4 +10,6 @@ Added a seed-book flow, selectable subject preferences, author/year constraints,
 
 ## Validation / remaining work
 
-Recommendation logic test passes. Hosted live API integration and full browser matching flow remain incomplete.
+4 Flask tests and 1 recommendation-logic test pass. Candidate matching requests use up to 48 catalog records. Captured preference state prevents stale responses from using changed inputs. Hosted live API integration and full browser matching flow remain incomplete.
+
+The direct live catalog request was stopped because network approval was cancelled; preview requests also return 502. No successful live recommendation flow is claimed for this revision.

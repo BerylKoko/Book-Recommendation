@@ -6,10 +6,10 @@ from pathlib import Path
 app = Flask(__name__, root_path=str(Path(__file__).resolve().parent))
 cache=OrderedDict()
 
-def get_books(query, page=1, sort='relevance'):
-    key=(query,page,sort)
+def get_books(query, page=1, sort='relevance', matching=False):
+    key=(query,page,sort,matching)
     if key in cache and time.monotonic()-cache[key][0]<600:return cache[key][1]
-    params={'q':query,'page':page,'limit':12,'fields':'key,title,author_name,first_publish_year,cover_i,edition_count,subject'}
+    params={'q':query,'page':page,'limit':48 if matching else 12,'fields':'key,title,author_name,first_publish_year,cover_i,edition_count,subject'}
     if sort=='new':params['sort']='new'
     response=requests.get('https://openlibrary.org/search.json',params=params,headers={'User-Agent':'BerylBookDiscovery/1.0 (portfolio student project)'},timeout=12)
     response.raise_for_status();data=response.json()
@@ -39,7 +39,7 @@ def api_books():
     try:page=int(request.args.get('page','1'))
     except ValueError:return jsonify(error='Invalid page.'),400
     if not 1<=page<=100:return jsonify(error='Invalid page.'),400
-    try:return jsonify(get_books(query,page,'new' if request.args.get('sort')=='new' else 'relevance'))
+    try:return jsonify(get_books(query,page,'new' if request.args.get('sort')=='new' else 'relevance',request.args.get('mode')=='match'))
     except (requests.RequestException,ValueError):return jsonify(error='Book search is temporarily unavailable. Please try again.'),502
 
 if __name__=='__main__':app.run(port=5001)
