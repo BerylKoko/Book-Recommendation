@@ -1,27 +1,80 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
+
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Recommendations for "{{ query }}"</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <title>Books for {{ query }} — Bookmatch</title>
+
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='style.css') }}"
+    >
 </head>
+
 <body>
-    <div class="container">
-        <h1>Recommendations for "{{ query }}"</h1>
-        {% if books %}
-            <ul class="book-list">
-                {% for book in books %}
-                    <li>
-                        <h2>{{ book.title }}</h2>
-                        <p>by {{ book.authors }}</p>
-                    </li>
-                {% endfor %}
-            </ul>
+
+    <main class="recommendations-page">
+
+        <a href="{{ url_for('index') }}" class="back-link">
+            ← Back to discovery
+        </a>
+
+        <h1>Books for “{{ query }}”</h1>
+
+        {% if error %}
+
+            <p class="error-message" role="alert">
+                {{ error }}
+            </p>
+
         {% else %}
-            <p>No recommendations found. Try a different search.</p>
+
+            <div class="book-grid">
+
+                {% for book in books %}
+
+                    <article class="book-card">
+
+                        {% if book.cover %}
+                            <img
+                                src="{{ book.cover }}"
+                                alt="Cover of {{ book.title }}"
+                            >
+                        {% endif %}
+
+                        <h2>{{ book.title }}</h2>
+
+                        <p>{{ book.authors }}</p>
+
+                        {% if book.year %}
+                            <p>First published {{ book.year }}</p>
+                        {% endif %}
+
+                        <a
+                            href="{{ book.url }}"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                        >
+                            View on Open Library
+                        </a>
+
+                    </article>
+
+                {% else %}
+
+                    <p>
+                        No matches found. Try a different title or author.
+                    </p>
+
+                {% endfor %}
+
+            </div>
+
         {% endif %}
-        <a href="/">Back to Search</a>
-    </div>
+
+    </main>
+
 </body>
 </html>
