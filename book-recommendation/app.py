@@ -1,3 +1,4 @@
+
 """Beryl's Flask discovery app, extended with normalized metadata and API states."""
 from flask import Flask, render_template, request, jsonify
 import requests, time, re
@@ -5,6 +6,8 @@ from collections import OrderedDict
 from pathlib import Path
 app = Flask(__name__, root_path=str(Path(__file__).resolve().parent))
 cache=OrderedDict()
+
+
 
 def get_books(query, page=1, sort='relevance', matching=False):
     key=(query,page,sort,matching)
