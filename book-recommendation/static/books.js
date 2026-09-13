@@ -49,6 +49,8 @@ let total = 0;
 let controller;
 let currentQuery = "";
 let currentMatching = false;
+let searchQuery = "";
+let searchPage = 1;
 
 
 function count() {
@@ -140,8 +142,8 @@ function render(books) {
                     book.matches
                         ? `
                             <p class="reason">
-                                Matches:
-                                ${book.matches.map(esc).join(" · ")}
+                                Match strength: ${book.matchCount}/${book.matchTotal} selected subjects<br>
+                                Matches: ${book.matches.map(esc).join(" · ")}
                             </p>
                         `
                         : ""
@@ -283,8 +285,8 @@ function detail(book) {
             book.matches
                 ? `
                     <p class="reason">
-                        Suggested because of:
-                        ${book.matches.map(esc).join(", ")}
+                        Match strength: ${book.matchCount}/${book.matchTotal} selected subjects<br>
+                        Suggested because of: ${book.matches.map(esc).join(", ")}
                     </p>
                 `
                 : ""
@@ -426,6 +428,11 @@ async function requestBooks(
     currentQuery = query;
     currentMatching = matching;
 
+    if (!matching) {
+        searchQuery = query;
+        searchPage = page;
+    }
+
     controller?.abort();
 
     controller =
@@ -453,6 +460,9 @@ async function requestBooks(
             ? "matches"
             : "search"
     );
+
+    $("#back-to-search").hidden =
+        !matching;
 
     $("#status").textContent =
         matching
@@ -569,6 +579,8 @@ async function requestBooks(
 
             rows = data.books;
             total = data.total;
+            searchPage = page;
+            searchQuery = query;
 
             render(rows);
 
@@ -669,6 +681,8 @@ $("#search-form").onsubmit =
         }
 
         page = 1;
+        searchPage = 1;
+        searchQuery = query;
 
         requestBooks(query);
     };
@@ -696,12 +710,32 @@ $("#more").onclick = () => {
 };
 
 
+$("#back-to-search").onclick = () => {
+    controller?.abort();
+    sequence++;
+
+    if (!searchQuery) {
+        return;
+    }
+
+    page = searchPage;
+    $("#back-to-search").hidden = true;
+
+    requestBooks(
+        searchQuery,
+        false
+    );
+};
+
+
 $("#saved").onclick = () => {
     controller?.abort();
 
     sequence++;
 
     setView("saved");
+
+    $("#back-to-search").hidden = true;
 
     $("#books").removeAttribute(
         "aria-busy"
@@ -726,6 +760,8 @@ $("#saved").onclick = () => {
 $("#discover").onclick = () => {
     const query =
         $("#query").value.trim();
+
+    $("#back-to-search").hidden = true;
 
     if (!query) {
         setView("search");
