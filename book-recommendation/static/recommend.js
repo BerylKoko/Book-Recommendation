@@ -57,14 +57,22 @@ export function rankBooks(
                 )
             ];
 
+            const matchScore =
+                wanted.size
+                    ? matches.length / wanted.size
+                    : 0;
+
             return {
                 ...b,
-                matches
+                matches,
+                matchCount: matches.length,
+                matchTotal: wanted.size,
+                matchScore
             };
         })
         .filter(
             b =>
-                b.matches.length > 0 &&
+                b.matchScore > 0 &&
                 (
                     !newAuthor ||
                     !authors(b).some(
@@ -86,8 +94,7 @@ export function rankBooks(
         )
         .sort(
             (a, b) =>
-                b.matches.length -
-                    a.matches.length ||
+                b.matchScore - a.matchScore ||
                 a.title.localeCompare(
                     b.title
                 )
