@@ -1,11 +1,6 @@
 import { rankBooks } from "./recommend.js";
-
-
 const $ = (selector) => document.querySelector(selector);
-
 const KEY = "bookmatch:reading-list:v1";
-
-
 const esc = (value) =>
     String(value ?? "").replace(
         /[&<>"']/g,
@@ -18,10 +13,8 @@ const esc = (value) =>
         })[character]
     );
 
-
 let saved = [];
 let corrupt = false;
-
 try {
     const value = JSON.parse(
         localStorage.getItem(KEY) || "[]"
@@ -69,7 +62,6 @@ function setView(next) {
         String(next === "saved")
     );
 }
-
 
 function render(books) {
     $("#books").replaceChildren();
