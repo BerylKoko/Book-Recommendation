@@ -1,7 +1,7 @@
 import { rankBooks } from "./recommend.js";
 const $ = (selector) => document.querySelector(selector);
 const KEY = "bookmatch:reading-list:v1";
-const MATCH_RESULT_LIMIT = 12;
+const RECOMMENDATION_PAGE_SIZE = 12;
 const MAX_MATCH_PAGES = 3;
 const esc = (value) =>
     String(value ?? "").replace(
@@ -38,6 +38,9 @@ try {
 
 
 let rows = [];
+let recommendationRows = [];
+let recommendationCandidateCount = 0;
+let recommendationCheckedPages = 0;
 let seed = null;
 let view = "search";
 let sequence = 0;
@@ -189,6 +192,28 @@ function render(books) {
 
         $("#books").appendChild(card);
     }
+}
+
+
+function renderRecommendationPage() {
+    const start =
+        (page - 1) * RECOMMENDATION_PAGE_SIZE;
+
+    const end =
+        start + RECOMMENDATION_PAGE_SIZE;
+
+    rows = recommendationRows.slice(
+        start,
+        end
+    );
+
+    render(rows);
+
+    $("#status").textContent =
+        `${recommendationRows.length} suggestions from ${recommendationCandidateCount} catalog results · Page ${page} · Checked ${recommendationCheckedPages} ${recommendationCheckedPages === 1 ? "catalog page" : "catalog pages"}`;
+
+    $("#more").hidden =
+        end >= recommendationRows.length;
 }
 
 
@@ -454,66 +479,83 @@ async function requestBooks(
 
     try {
         if (matching) {
-            let candidates = [];
-            let ranked = [];
-            let checkedPages = 0;
+            const firstPage = await fetchBookPage(
+                query,
+                1,
+                true,
+                abort.signal
+            );
 
-            for (
-                let matchPage = 1;
-                matchPage <= MAX_MATCH_PAGES;
-                matchPage++
-            ) {
-                const data = await fetchBookPage(
-                    query,
-                    matchPage,
-                    true,
-                    abort.signal
-                );
+            if (id !== sequence) {
+                return;
+            }
+
+            const limit =
+                firstPage.limit || 24;
+
+            const pagesToCheck = Math.min(
+                MAX_MATCH_PAGES,
+                Math.max(
+                    1,
+                    Math.ceil(firstPage.total / limit)
+                )
+            );
+
+            let candidates = [
+                ...firstPage.books
+            ];
+
+            if (pagesToCheck > 1) {
+                const remainingPages =
+                    await Promise.all(
+                        Array.from(
+                            {
+                                length:
+                                    pagesToCheck - 1
+                            },
+                            (_, index) =>
+                                fetchBookPage(
+                                    query,
+                                    index + 2,
+                                    true,
+                                    abort.signal
+                                )
+                        )
+                    );
 
                 if (id !== sequence) {
                     return;
                 }
 
-                candidates = [
-                    ...candidates,
-                    ...data.books
-                ];
-
-                total = data.total;
-                checkedPages = matchPage;
-
-                ranked = rankBooks(
-                    candidates,
-                    matchSeed,
-                    traits,
-                    preferences
-                );
-
-                const limit = data.limit || 24;
-                const reachedEnd =
-                    matchPage * limit >= total;
-
-                if (
-                    ranked.length >= MATCH_RESULT_LIMIT ||
-                    reachedEnd
-                ) {
-                    break;
+                for (const data of remainingPages) {
+                    candidates.push(
+                        ...data.books
+                    );
                 }
             }
 
-            rows = ranked.slice(
-                0,
-                MATCH_RESULT_LIMIT
+            total = firstPage.total;
+
+            recommendationRows = rankBooks(
+                candidates,
+                matchSeed,
+                traits,
+                preferences
             );
 
-            render(rows);
+            recommendationCandidateCount =
+                candidates.length;
 
-            $("#status").textContent =
-                `${rows.length} suggestions from ${candidates.length} catalog results · Checked ${checkedPages} ${checkedPages === 1 ? "page" : "pages"}`;
+            recommendationCheckedPages =
+                pagesToCheck;
 
-            $("#more").hidden = true;
+            page = 1;
+
+            renderRecommendationPage();
 
         } else {
+            recommendationRows = [];
+
             const data = await fetchBookPage(
                 query,
                 page,
@@ -543,8 +585,10 @@ async function requestBooks(
     } catch (error) {
         if (id === sequence) {
             rows = [];
+            recommendationRows = [];
 
             $("#books").replaceChildren();
+            $("#more").hidden = true;
 
             $("#status").textContent =
                 `Search could not load. ${
@@ -631,11 +675,23 @@ $("#search-form").onsubmit =
 
 
 $("#more").onclick = () => {
+    if (currentMatching) {
+        const nextStart =
+            page * RECOMMENDATION_PAGE_SIZE;
+
+        if (nextStart < recommendationRows.length) {
+            page++;
+            renderRecommendationPage();
+        }
+
+        return;
+    }
+
     page++;
 
     requestBooks(
         currentQuery,
-        currentMatching
+        false
     );
 };
 
