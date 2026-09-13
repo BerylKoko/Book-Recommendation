@@ -64,7 +64,7 @@ export function rankBooks(
         })
         .filter(
             b =>
-                b.matches.length === wanted.size &&
+                b.matches.length > 0 &&
                 (
                     !newAuthor ||
                     !authors(b).some(
