@@ -1,30 +1,20 @@
 import { rankBooks } from "./recommend.js";
-
-
-const $ = (selector) =>
-    document.querySelector(selector);
-
-const KEY = "margin:reading-list:v1";
-
-
+const $ = (selector) => document.querySelector(selector);
+const KEY = "bookmatch:reading-list:v1";
 const esc = (value) =>
     String(value ?? "").replace(
         /[&<>"']/g,
-        (character) =>
-            ({
-                "&": "&amp;",
-                "<": "&lt;",
-                ">": "&gt;",
-                '"': "&quot;",
-                "'": "&#39;"
-            })[character]
+        (character) => ({
+            "&": "&amp;",
+            "<": "&lt;",
+            ">": "&gt;",
+            '"': "&quot;",
+            "'": "&#39;"
+        })[character]
     );
-
 
 let saved = [];
 let corrupt = false;
-
-
 try {
     const value = JSON.parse(
         localStorage.getItem(KEY) || "[]"
@@ -52,6 +42,8 @@ let sequence = 0;
 let page = 1;
 let total = 0;
 let controller;
+let currentQuery = "";
+let currentMatching = false;
 
 
 function count() {
@@ -72,7 +64,6 @@ function setView(next) {
         String(next === "saved")
     );
 }
-
 
 function render(books) {
     $("#books").replaceChildren();
@@ -105,7 +96,6 @@ function render(books) {
 
     for (const book of books) {
         const card = document.createElement("article");
-
         card.className = "book";
 
         card.innerHTML = `
@@ -128,21 +118,14 @@ function render(books) {
             </div>
 
             <div class="book-info">
-                <h3>
-                    ${esc(book.title)}
-                </h3>
+                <h3>${esc(book.title)}</h3>
 
-                <p>
-                    ${esc(book.authors)}
-                </p>
+                <p>${esc(book.authors)}</p>
 
                 <small>
                     ${book.year || "Year unavailable"}
                     ${
-                        saved.some(
-                            (item) =>
-                                item.id === book.id
-                        )
+                        saved.some((item) => item.id === book.id)
                             ? " · Saved"
                             : ""
                     }
@@ -153,9 +136,7 @@ function render(books) {
                         ? `
                             <p class="reason">
                                 Matches:
-                                ${book.matches
-                                    .map(esc)
-                                    .join(" · ")}
+                                ${book.matches.map(esc).join(" · ")}
                             </p>
                         `
                         : ""
@@ -181,37 +162,27 @@ function render(books) {
 
         card
             .querySelector("img")
-            ?.addEventListener(
-                "error",
-                (event) => {
-                    const replacement =
-                        document.createElement(
-                            "span"
-                        );
+            ?.addEventListener("error", (event) => {
+                const replacement =
+                    document.createElement("span");
 
-                    replacement.className =
-                        "no-cover";
+                replacement.className = "no-cover";
+                replacement.textContent = "No cover";
 
-                    replacement.textContent =
-                        "No cover";
+                event.target.replaceWith(replacement);
+            });
 
-                    event.target.replaceWith(
-                        replacement
-                    );
-                }
-            );
-
-        card
-            .querySelector(".details")
-            .onclick = () =>
-                detail(book);
+        card.querySelector(".details").onclick = () => {
+            detail(book);
+        };
 
         const choose =
             card.querySelector(".choose");
 
         if (choose) {
-            choose.onclick = () =>
+            choose.onclick = () => {
                 chooseSeed(book);
+            };
         }
 
         $("#books").appendChild(card);
@@ -225,24 +196,14 @@ function chooseSeed(book) {
     $("#preferences").hidden = false;
 
     $("#seed").innerHTML = `
-        <strong>
-            ${esc(book.title)}
-        </strong>
-
-        <span>
-            ${esc(book.authors)}
-        </span>
+        <strong>${esc(book.title)}</strong>
+        <span>${esc(book.authors)}</span>
     `;
 
     const subjects = [
-        ...new Set(
-            book.subjects || []
-        )
+        ...new Set(book.subjects || [])
     ]
-        .filter(
-            (subject) =>
-                subject.length < 50
-        )
+        .filter((subject) => subject.length < 50)
         .slice(0, 16);
 
     $("#traits").innerHTML =
@@ -253,11 +214,7 @@ function chooseSeed(book) {
                         <input
                             type="checkbox"
                             value="${esc(subject)}"
-                            ${
-                                index < 2
-                                    ? "checked"
-                                    : ""
-                            }
+                            ${index < 2 ? "checked" : ""}
                         >
                         ${esc(subject)}
                     </label>
@@ -285,18 +242,13 @@ function detail(book) {
             ${esc(book.title)}
         </h2>
 
-        <p>
-            ${esc(book.authors)}
-        </p>
+        <p>${esc(book.authors)}</p>
 
         <p>
             First published
             ${book.year || "year unavailable"}
             ·
-            ${
-                book.editions ||
-                "Unknown number of"
-            }
+            ${book.editions || "Unknown number of"}
             editions
         </p>
 
@@ -305,9 +257,7 @@ function detail(book) {
                 ? `
                     <p class="reason">
                         Suggested because of:
-                        ${book.matches
-                            .map(esc)
-                            .join(", ")}
+                        ${book.matches.map(esc).join(", ")}
                     </p>
                 `
                 : ""
@@ -318,9 +268,7 @@ function detail(book) {
                 .slice(0, 12)
                 .map(
                     (subject) => `
-                        <span>
-                            ${esc(subject)}
-                        </span>
+                        <span>${esc(subject)}</span>
                     `
                 )
                 .join("")}
@@ -348,14 +296,8 @@ function detail(book) {
     `;
 
     const update = () => {
-        const alreadySaved =
-            saved.some(
-                (item) =>
-                    item.id === book.id
-            );
-
         $("#save-book").textContent =
-            alreadySaved
+            saved.some((item) => item.id === book.id)
                 ? "Remove from reading list"
                 : "Save to reading list";
     };
@@ -364,21 +306,13 @@ function detail(book) {
 
     $("#save-book").onclick = () => {
         const exists =
-            saved.some(
-                (item) =>
-                    item.id === book.id
-            );
+            saved.some((item) => item.id === book.id);
 
-        const next =
-            exists
-                ? saved.filter(
-                    (item) =>
-                        item.id !== book.id
-                )
-                : [
-                    ...saved,
-                    book
-                ];
+        const next = exists
+            ? saved.filter(
+                  (item) => item.id !== book.id
+              )
+            : [...saved, book];
 
         try {
             localStorage.setItem(
@@ -416,6 +350,13 @@ async function requestBooks(
     query,
     matching = false
 ) {
+    if (!query) {
+        return;
+    }
+
+    currentQuery = query;
+    currentMatching = matching;
+
     controller?.abort();
 
     controller =
@@ -463,13 +404,12 @@ async function requestBooks(
 
     const timeout =
         setTimeout(
-            () =>
-                abort.abort(),
+            () => abort.abort(),
             16000
         );
 
     try {
-        const parameters =
+        const params =
             new URLSearchParams({
                 q: query,
                 page: String(page),
@@ -481,7 +421,7 @@ async function requestBooks(
 
         const response =
             await fetch(
-                "/api/books?" + parameters,
+                "/api/books?" + params,
                 {
                     signal:
                         abort.signal
@@ -508,15 +448,14 @@ async function requestBooks(
             );
         }
 
-        rows =
-            matching
-                ? rankBooks(
-                    data.books,
-                    matchSeed,
-                    traits,
-                    preferences
-                )
-                : data.books;
+        rows = matching
+            ? rankBooks(
+                  data.books,
+                  matchSeed,
+                  traits,
+                  preferences
+              )
+            : data.books;
 
         total = data.total;
 
@@ -524,12 +463,13 @@ async function requestBooks(
 
         $("#status").textContent =
             matching
-                ? `${rows.length} suggestions from ${data.books.length} catalog results · Based on selected subjects`
+                ? `${rows.length} suggestions from ${data.books.length} catalog results · Page ${page}`
                 : `${total.toLocaleString()} results · Page ${page}`;
 
+        const limit = data.limit || 12;
+
         $("#more").hidden =
-            matching ||
-            page * 12 >= total;
+            page * limit >= total;
 
     } catch (error) {
         if (id === sequence) {
@@ -539,8 +479,7 @@ async function requestBooks(
 
             $("#status").textContent =
                 `Search could not load. ${
-                    error.name ===
-                    "AbortError"
+                    error.name === "AbortError"
                         ? "The request timed out."
                         : error.message
                 }`;
@@ -564,8 +503,7 @@ const selectedSubjects = () =>
             "#traits input:checked"
         )
     ].map(
-        (input) =>
-            input.value
+        (input) => input.value
     );
 
 
@@ -588,49 +526,47 @@ $("#recommend").onclick = () => {
 
     page = 1;
 
-    const query =
+    const subjectQuery =
         subjects
             .map(
                 (subject) =>
-                    'subject:"' +
-                    subject.replace(
+                    `subject:"${subject.replace(
                         /["\\]/g,
                         ""
-                    ) +
-                    '"'
+                    )}"`
             )
             .join(" OR ");
 
     requestBooks(
-        query,
+        subjectQuery,
         true
     );
 };
 
 
-$("#search-form").onsubmit = (
-    event
-) => {
-    event.preventDefault();
+$("#search-form").onsubmit =
+    (event) => {
+        event.preventDefault();
 
-    const query =
-        $("#query").value.trim();
+        const query =
+            $("#query").value.trim();
 
-    if (!query) {
-        return;
-    }
+        if (!query) {
+            return;
+        }
 
-    page = 1;
+        page = 1;
 
-    requestBooks(query);
-};
+        requestBooks(query);
+    };
 
 
 $("#more").onclick = () => {
     page++;
 
     requestBooks(
-        $("#query").value.trim()
+        currentQuery,
+        currentMatching
     );
 };
 
@@ -666,16 +602,13 @@ $("#discover").onclick = () => {
     const query =
         $("#query").value.trim();
 
-    setView("search");
-
-    $("#shelf-title").textContent =
-        "Choose a starting book";
-
     if (!query) {
+        setView("search");
+        $("#shelf-title").textContent =
+            "Choose a starting book";
         $("#status").textContent = "";
-
         $("#books").replaceChildren();
-
+        $("#more").hidden = true;
         return;
     }
 
@@ -685,8 +618,9 @@ $("#discover").onclick = () => {
 };
 
 
-$("#close").onclick = () =>
+$("#close").onclick = () => {
     $("#detail").close();
+};
 
 
 count();
