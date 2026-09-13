@@ -16,6 +16,9 @@ app = Flask(
 
 cache = OrderedDict()
 
+SEARCH_LIMIT = 12
+MATCH_LIMIT = 24
+
 
 def get_books(query, page=1, sort="relevance", matching=False):
     cache_key = (query, page, sort, matching)
@@ -28,11 +31,12 @@ def get_books(query, page=1, sort="relevance", matching=False):
             return saved_result
 
     url = "https://openlibrary.org/search.json"
+    limit = MATCH_LIMIT if matching else SEARCH_LIMIT
 
     params = {
         "q": query,
         "page": page,
-        "limit": 48 if matching else 12,
+        "limit": limit,
         "fields": (
             "key,title,author_name,first_publish_year,"
             "cover_i,edition_count,subject"
@@ -109,6 +113,7 @@ def get_books(query, page=1, sort="relevance", matching=False):
         "books": clean_books,
         "total": data.get("numFound", 0),
         "page": page,
+        "limit": limit,
         "source": "Open Library"
     }
 
