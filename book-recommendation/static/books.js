@@ -1,6 +1,8 @@
 import { rankBooks } from "./recommend.js";
 const $ = (selector) => document.querySelector(selector);
 const KEY = "bookmatch:reading-list:v1";
+const MATCH_RESULT_LIMIT = 12;
+const MAX_MATCH_PAGES = 3;
 const esc = (value) =>
     String(value ?? "").replace(
         /[&<>"']/g,
@@ -346,6 +348,48 @@ function detail(book) {
 }
 
 
+async function fetchBookPage(
+    query,
+    requestedPage,
+    matching,
+    signal
+) {
+    const params =
+        new URLSearchParams({
+            q: query,
+            page: String(requestedPage),
+            mode:
+                matching
+                    ? "match"
+                    : "search"
+        });
+
+    const response =
+        await fetch(
+            "/api/books?" + params,
+            { signal }
+        );
+
+    const data =
+        await response.json();
+
+    if (!response.ok) {
+        throw Error(
+            data.error ||
+            `Catalog returned ${response.status}.`
+        );
+    }
+
+    if (!Array.isArray(data.books)) {
+        throw Error(
+            "Unexpected catalog response."
+        );
+    }
+
+    return data;
+}
+
+
 async function requestBooks(
     query,
     matching = false
@@ -409,67 +453,92 @@ async function requestBooks(
         );
 
     try {
-        const params =
-            new URLSearchParams({
-                q: query,
-                page: String(page),
-                mode:
-                    matching
-                        ? "match"
-                        : "search"
-            });
+        if (matching) {
+            let candidates = [];
+            let ranked = [];
+            let checkedPages = 0;
 
-        const response =
-            await fetch(
-                "/api/books?" + params,
-                {
-                    signal:
-                        abort.signal
+            for (
+                let matchPage = 1;
+                matchPage <= MAX_MATCH_PAGES;
+                matchPage++
+            ) {
+                const data = await fetchBookPage(
+                    query,
+                    matchPage,
+                    true,
+                    abort.signal
+                );
+
+                if (id !== sequence) {
+                    return;
                 }
+
+                candidates = [
+                    ...candidates,
+                    ...data.books
+                ];
+
+                total = data.total;
+                checkedPages = matchPage;
+
+                ranked = rankBooks(
+                    candidates,
+                    matchSeed,
+                    traits,
+                    preferences
+                );
+
+                const limit = data.limit || 24;
+                const reachedEnd =
+                    matchPage * limit >= total;
+
+                if (
+                    ranked.length >= MATCH_RESULT_LIMIT ||
+                    reachedEnd
+                ) {
+                    break;
+                }
+            }
+
+            rows = ranked.slice(
+                0,
+                MATCH_RESULT_LIMIT
             );
 
-        const data =
-            await response.json();
+            render(rows);
 
-        if (!response.ok) {
-            throw Error(
-                data.error ||
-                `Catalog returned ${response.status}.`
+            $("#status").textContent =
+                `${rows.length} suggestions from ${candidates.length} catalog results · Checked ${checkedPages} ${checkedPages === 1 ? "page" : "pages"}`;
+
+            $("#more").hidden = true;
+
+        } else {
+            const data = await fetchBookPage(
+                query,
+                page,
+                false,
+                abort.signal
             );
+
+            if (id !== sequence) {
+                return;
+            }
+
+            rows = data.books;
+            total = data.total;
+
+            render(rows);
+
+            $("#status").textContent =
+                `${total.toLocaleString()} results · Page ${page}`;
+
+            const limit = data.limit || 12;
+
+            $("#more").hidden =
+                !rows.length ||
+                page * limit >= total;
         }
-
-        if (id !== sequence) {
-            return;
-        }
-
-        if (!Array.isArray(data.books)) {
-            throw Error(
-                "Unexpected catalog response."
-            );
-        }
-
-        rows = matching
-            ? rankBooks(
-                  data.books,
-                  matchSeed,
-                  traits,
-                  preferences
-              )
-            : data.books;
-
-        total = data.total;
-
-        render(rows);
-
-        $("#status").textContent =
-            matching
-                ? `${rows.length} suggestions from ${data.books.length} catalog results · Page ${page}`
-                : `${total.toLocaleString()} results · Page ${page}`;
-
-        const limit = data.limit || 12;
-
-        $("#more").hidden =
-            page * limit >= total;
 
     } catch (error) {
         if (id === sequence) {
