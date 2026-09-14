@@ -1,6 +1,6 @@
 import {rankBooks} from './recommend.js';
 const $=s=>document.querySelector(s),KEY='margin:reading-list:v1',PAGE_SIZE=12;
-const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'}[c]));
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let saved=[],corrupt=false;try{const v=JSON.parse(localStorage.getItem(KEY)||'[]');if(!Array.isArray(v))throw Error();saved=v.filter(b=>b&&/^\/works\/OL\d+W$/.test(b.id));}catch{corrupt=true;}
 let rows=[],recommendationRows=[],seed=null,view='search',sequence=0,page=1,total=0,controller,currentMatching=false,searchQuery='',searchPage=1;
 function count(){$('#count').textContent=saved.length;}
