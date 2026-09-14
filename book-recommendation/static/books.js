@@ -1,17 +1,24 @@
 import { rankBooks, parseTropeQuery } from "./recommend.js";
+
 const $ = (selector) => document.querySelector(selector);
 const KEY = "bookmatch:reading-list:v1";
 const RECOMMENDATION_PAGE_SIZE = 12;
-
-const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (character) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[character]);
+const esc = (value) => String(value ?? "").replace(
+    /[&<>"']/g,
+    (character) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[character]
+);
 
 let saved = [];
 let corrupt = false;
 try {
     const value = JSON.parse(localStorage.getItem(KEY) || "[]");
     if (!Array.isArray(value)) throw Error();
-    saved = value.filter((book) => book && /^(\/works\/OL\d+W|catalog:[a-z0-9-]+|google:[A-Za-z0-9_-]+)$/.test(book.id));
-} catch { corrupt = true; }
+    saved = value.filter(
+        (book) => book && /^(\/works\/OL\d+W|google:[A-Za-z0-9_-]+)$/.test(book.id)
+    );
+} catch {
+    corrupt = true;
+}
 
 let rows = [];
 let recommendationRows = [];
@@ -27,7 +34,9 @@ let currentMatching = false;
 let searchQuery = "";
 let searchPage = 1;
 
-function count() { $("#count").textContent = saved.length; }
+function count() {
+    $("#count").textContent = saved.length;
+}
 
 function setView(next) {
     view = next;
@@ -35,22 +44,66 @@ function setView(next) {
     $("#saved").setAttribute("aria-pressed", String(next === "saved"));
 }
 
+function coverCandidates(book) {
+    return [...new Set([book.cover, ...(book.coverFallbacks || [])].filter(Boolean))];
+}
+
+function attachCoverFallback(image, book) {
+    const covers = coverCandidates(book);
+    let index = 0;
+    image.addEventListener("error", () => {
+        index += 1;
+        if (index < covers.length) {
+            image.src = covers[index];
+            return;
+        }
+        const replacement = document.createElement("span");
+        replacement.className = "no-cover";
+        replacement.textContent = "No cover";
+        image.replaceWith(replacement);
+    });
+}
+
 function render(books) {
     $("#books").replaceChildren();
     if (!books.length) {
-        $("#books").innerHTML = `<div class="empty"><h3>${view === "saved" ? "No books saved yet." : "No matching books found."}</h3><p>${view === "saved" ? "Open a book and save it to your reading list." : view === "matches" ? "Try fewer subjects, any publication year, or allow the same author." : "Try a different title or author."}</p></div>`;
+        $("#books").innerHTML = `<div class="empty"><h3>${
+            view === "saved" ? "No books saved yet." : "No matching books found."
+        }</h3><p>${
+            view === "saved"
+                ? "Open a book and save it to your reading list."
+                : view === "matches"
+                    ? "Try fewer subjects, any publication year, or allow the same author."
+                    : "Try a different title or author."
+        }</p></div>`;
         return;
     }
+
     for (const book of books) {
+        const covers = coverCandidates(book);
         const card = document.createElement("article");
         card.className = "book";
-        card.innerHTML = `<div class="cover-wrap">${book.cover ? `<img src="${esc(book.cover)}" alt="" loading="lazy">` : `<span class="no-cover">No cover</span>`}</div><div class="book-info"><h3>${esc(book.title)}</h3><p>${esc(book.authors)}</p><small>${book.year || "Year unavailable"}${saved.some((item) => item.id === book.id) ? " · Saved" : ""}</small>${book.matches ? `<p class="reason">Match strength: ${book.matchCount}/${book.matchTotal} selected subjects<br>Matches: ${book.matches.map(esc).join(" · ")}${book.missingConcepts?.length ? `<br>Not confirmed: ${book.missingConcepts.map(esc).join(" · ")}` : ""}</p>` : ""}<div class="book-actions"><button class="details">Details</button>${view === "search" ? `<button class="choose">Use this book</button>` : ""}</div></div>`;
-        card.querySelector("img")?.addEventListener("error", (event) => {
-            const replacement = document.createElement("span");
-            replacement.className = "no-cover";
-            replacement.textContent = "No cover";
-            event.target.replaceWith(replacement);
-        });
+        card.innerHTML = `
+            <div class="cover-wrap">
+                ${covers.length
+                    ? `<img src="${esc(covers[0])}" alt="" loading="lazy">`
+                    : `<span class="no-cover">No cover</span>`}
+            </div>
+            <div class="book-info">
+                <h3>${esc(book.title)}</h3>
+                <p>${esc(book.authors)}</p>
+                <small>${book.year || "Year unavailable"}${
+                    saved.some((item) => item.id === book.id) ? " · Saved" : ""
+                }</small>
+                ${book.matches ? `<p class="reason">Match strength: ${book.matchCount}/${book.matchTotal} selected subjects<br>Matches: ${book.matches.map(esc).join(" · ")}${book.missingConcepts?.length ? `<br>Not confirmed: ${book.missingConcepts.map(esc).join(" · ")}` : ""}</p>` : ""}
+                <div class="book-actions">
+                    <button class="details">Details</button>
+                    ${view === "search" ? `<button class="choose">Use this book</button>` : ""}
+                </div>
+            </div>`;
+
+        const image = card.querySelector("img");
+        if (image) attachCoverFallback(image, book);
         card.querySelector(".details").onclick = () => detail(book);
         const choose = card.querySelector(".choose");
         if (choose) choose.onclick = () => chooseSeed(book);
@@ -61,10 +114,16 @@ function render(books) {
 function renderRecommendationPage() {
     const start = (page - 1) * RECOMMENDATION_PAGE_SIZE;
     const end = start + RECOMMENDATION_PAGE_SIZE;
-    const totalPages = Math.max(1, Math.ceil(recommendationRows.length / RECOMMENDATION_PAGE_SIZE));
+    const totalPages = Math.max(
+        1,
+        Math.ceil(recommendationRows.length / RECOMMENDATION_PAGE_SIZE)
+    );
     rows = recommendationRows.slice(start, end);
     render(rows);
-    $("#status").textContent = `${recommendationRows.filter(book => book.matchCount === book.matchTotal).length} full matches · ${recommendationRows.length} suggestions · Page ${page} of ${totalPages}${recommendationNotice}`;
+    const fullMatches = recommendationRows.filter(
+        (book) => book.matchCount === book.matchTotal
+    ).length;
+    $("#status").textContent = `${fullMatches} full matches · ${recommendationRows.length} suggestions · Page ${page} of ${totalPages}${recommendationNotice}`;
     $("#previous").hidden = page <= 1;
     $("#more").hidden = end >= recommendationRows.length;
 }
@@ -73,45 +132,84 @@ function chooseSeed(book) {
     seed = book;
     $("#preferences").hidden = false;
     $("#seed").innerHTML = `<strong>${esc(book.title)}</strong><span>${esc(book.authors)}</span>`;
-    const subjects = [...new Set(book.subjects || [])].filter((subject) => subject.length < 50).slice(0, 16);
-    $("#traits").innerHTML = subjects.map((subject, index) => `<label class="trait"><input type="checkbox" value="${esc(subject)}" ${index < 2 ? "checked" : ""}>${esc(subject)}</label>`).join("");
-    $("#preference-status").textContent = subjects.length ? "Select the parts you want more of." : "Add the subjects or tropes you want below.";
+    const subjects = [...new Set(book.subjects || [])]
+        .filter((subject) => subject.length < 70)
+        .slice(0, 16);
+    $("#traits").innerHTML = subjects
+        .map(
+            (subject, index) =>
+                `<label class="trait"><input type="checkbox" value="${esc(subject)}" ${index < 2 ? "checked" : ""}>${esc(subject)}</label>`
+        )
+        .join("");
+    $("#preference-status").textContent = subjects.length
+        ? "Select the parts you want more of."
+        : "Add the subjects or tropes you want below.";
     $("#recommend").disabled = !subjects.length;
-    $("#preferences").scrollIntoView({block:"nearest"});
+    $("#preferences").scrollIntoView({block: "nearest"});
 }
 
 function safeBookUrl(value) {
-    try { const url = new URL(value); return url.protocol === "https:" ? url.href : "https://openlibrary.org"; }
-    catch { return "https://openlibrary.org"; }
+    try {
+        const url = new URL(value);
+        return url.protocol === "https:" ? url.href : "https://openlibrary.org";
+    } catch {
+        return "https://openlibrary.org";
+    }
 }
 
 function evidenceHtml(book) {
-    const evidence = book.conceptEvidence || book.evidence || {};
-    return Object.keys(evidence).length ? `<details><summary>Why these subjects match</summary>${Object.entries(evidence).map(([tag, item]) => `<p><strong>${esc(tag)}</strong>: ${esc(item.note || "Catalog subject match")} <a href="${esc(safeBookUrl(item.url))}" target="_blank" rel="noreferrer">Source ↗</a></p>`).join("")}</details>` : "";
+    const evidence = book.conceptEvidence || {};
+    if (!Object.keys(evidence).length) return "";
+    return `<details><summary>Why these subjects match</summary>${Object.entries(evidence)
+        .map(
+            ([tag, item]) =>
+                `<p><strong>${esc(tag)}</strong>: ${esc(item.note || "Catalog match")} <a href="${esc(safeBookUrl(item.url || book.url))}" target="_blank" rel="noreferrer">Source ↗</a></p>`
+        )
+        .join("")}</details>`;
 }
 
 function detail(book) {
-    $("#detail-body").innerHTML = `<h2 id="book-title">${esc(book.title)}</h2><p>${esc(book.authors)}</p><p>First published ${book.year || "year unavailable"} · ${book.editions || "Unknown number of"} editions</p>${book.matches ? `<p class="reason">Match strength: ${book.matchCount}/${book.matchTotal} selected subjects<br>Suggested because of: ${book.matches.map(esc).join(", ")}</p>` : ""}${evidenceHtml(book)}<div class="tags">${(book.subjects || []).slice(0,12).map((subject) => `<span>${esc(subject)}</span>`).join("")}</div><p><a href="${esc(safeBookUrl(book.readingUrl || book.url || (/^\/works\/OL\d+W$/.test(book.id) ? "https://openlibrary.org" + book.id : "")))}" target="_blank" rel="noreferrer">View book and reading options ↗</a></p><button id="save-book" class="primary"></button><p id="save-status" role="status"></p>`;
-    const update = () => { $("#save-book").textContent = saved.some((item) => item.id === book.id) ? "Remove from reading list" : "Save to reading list"; };
+    $("#detail-body").innerHTML = `
+        <h2 id="book-title">${esc(book.title)}</h2>
+        <p>${esc(book.authors)}</p>
+        <p>Published ${book.year || "year unavailable"}${book.editions ? ` · ${book.editions} editions` : ""}</p>
+        ${book.matches ? `<p class="reason">Match strength: ${book.matchCount}/${book.matchTotal} selected subjects<br>Suggested because of: ${book.matches.map(esc).join(", ")}</p>` : ""}
+        ${evidenceHtml(book)}
+        <div class="tags">${(book.subjects || []).slice(0, 12).map((subject) => `<span>${esc(subject)}</span>`).join("")}</div>
+        <p><a href="${esc(safeBookUrl(book.readingUrl || book.url || (/^\/works\/OL\d+W$/.test(book.id) ? "https://openlibrary.org" + book.id : "")))}" target="_blank" rel="noreferrer">View book and reading options ↗</a></p>
+        <button id="save-book" class="primary"></button>
+        <p id="save-status" role="status"></p>`;
+
+    const update = () => {
+        $("#save-book").textContent = saved.some((item) => item.id === book.id)
+            ? "Remove from reading list"
+            : "Save to reading list";
+    };
     update();
     $("#save-book").onclick = () => {
         const exists = saved.some((item) => item.id === book.id);
-        const next = exists ? saved.filter((item) => item.id !== book.id) : [...saved, book];
+        const next = exists
+            ? saved.filter((item) => item.id !== book.id)
+            : [...saved, book];
         try {
             localStorage.setItem(KEY, JSON.stringify(next));
             saved = next;
-            update(); count(); render(view === "saved" ? saved : rows);
-            $("#save-status").textContent = exists ? "Removed from your list." : "Saved on this device.";
-        } catch { $("#save-status").textContent = "This browser could not save your change. Check storage permissions."; }
+            update();
+            count();
+            render(view === "saved" ? saved : rows);
+            $("#save-status").textContent = exists
+                ? "Removed from your list."
+                : "Saved on this device.";
+        } catch {
+            $("#save-status").textContent =
+                "This browser could not save your change. Check storage permissions.";
+        }
     };
     $("#detail").showModal();
 }
 
 async function fetchBookPage(query, requestedPage, signal) {
-    const params = new URLSearchParams({
-        q: query,
-        page: String(requestedPage)
-    });
+    const params = new URLSearchParams({q: query, page: String(requestedPage)});
     const response = await fetch("/api/books?" + params, {signal});
     const data = await response.json();
     if (!response.ok) throw Error(data.error || `Catalog returned ${response.status}.`);
@@ -124,7 +222,9 @@ async function fetchRecommendations(subjects, signal) {
     subjects.forEach((subject) => params.append("subject", subject));
     const response = await fetch("/api/recommend?" + params, {signal});
     const data = await response.json();
-    if (!response.ok) throw Error(data.error || `Recommendations returned ${response.status}.`);
+    if (!response.ok) {
+        throw Error(data.error || `Recommendations returned ${response.status}.`);
+    }
     if (!Array.isArray(data.books)) throw Error("Unexpected recommendation response.");
     return data;
 }
@@ -133,59 +233,75 @@ async function requestBooks(query, matching = false) {
     if (!query) return;
     currentQuery = query;
     currentMatching = matching;
-    if (!matching) { searchQuery = query; searchPage = page; }
+    if (!matching) {
+        searchQuery = query;
+        searchPage = page;
+    }
+
     controller?.abort();
     controller = new AbortController();
     const abort = controller;
     const matchSeed = seed;
     const traits = selectedSubjects();
-    const preferences = {newAuthor:$("#new-author").checked,era:$("#era").value};
+    const preferences = {
+        newAuthor: $("#new-author").checked,
+        era: $("#era").value
+    };
     const id = ++sequence;
+
     setView(matching ? "matches" : "search");
     $("#back-to-search").hidden = !matching || !searchQuery;
-    $("#status").textContent = matching ? "Searching related tropes…" : "Searching the catalog…";
+    $("#status").textContent = matching
+        ? "Searching related books…"
+        : "Searching the catalog…";
     $("#books").setAttribute("aria-busy", "true");
     $("#previous").hidden = true;
     $("#more").hidden = true;
-    $("#shelf-title").textContent = matching ? "Related books" : "Choose a starting book";
-    const timeout = setTimeout(() => abort.abort(), matching ? 30000 : 16000);
+    $("#shelf-title").textContent = matching
+        ? "Related books"
+        : "Choose a starting book";
+
+    const timeout = setTimeout(() => abort.abort(), matching ? 30000 : 18000);
     try {
         if (matching) {
             const data = await fetchRecommendations(traits, abort.signal);
             if (id !== sequence) return;
-
-            const ranked = rankBooks(
+            recommendationRows = rankBooks(
                 data.books,
                 matchSeed,
-                data.concepts?.map(concept => concept.label) || traits,
+                data.concepts?.map((concept) => concept.label) || traits,
                 preferences
             );
-
-            recommendationRows = ranked;
-            recommendationNotice = data.unavailableSources?.length ? " · Some live catalogs unavailable" : "";
+            recommendationNotice = data.unavailableSources?.length
+                ? " · Some live catalogs unavailable"
+                : "";
             page = 1;
             renderRecommendationPage();
-        } else {
-            recommendationRows = [];
-            const data = await fetchBookPage(query, page, abort.signal);
-            if (id !== sequence) return;
-            rows = data.books;
-            total = data.total;
-            searchPage = page;
-            searchQuery = query;
-            render(rows);
-            $("#status").textContent = `${total.toLocaleString()} results · Page ${page}${data.unavailableSources?.length ? " · Some live catalogs unavailable" : ""}`;
-            const limit = data.limit || 12;
-            $("#previous").hidden = page <= 1;
-            $("#more").hidden = !rows.length || page * limit >= total;
+            return;
         }
+
+        recommendationRows = [];
+        const data = await fetchBookPage(query, page, abort.signal);
+        if (id !== sequence) return;
+        rows = data.books;
+        total = data.total;
+        searchPage = page;
+        searchQuery = query;
+        render(rows);
+        $("#status").textContent = `${total.toLocaleString()} results · Page ${page}${data.unavailableSources?.length ? " · Some live catalogs unavailable" : ""}`;
+        const limit = data.limit || 12;
+        $("#previous").hidden = page <= 1;
+        $("#more").hidden = !rows.length || page * limit >= total;
     } catch (error) {
         if (id === sequence) {
-            rows = []; recommendationRows = [];
+            rows = [];
+            recommendationRows = [];
             $("#books").replaceChildren();
             $("#previous").hidden = true;
             $("#more").hidden = true;
-            $("#status").textContent = `Search could not load. ${error.name === "AbortError" ? "The request timed out." : error.message}`;
+            $("#status").textContent = `Search could not load. ${
+                error.name === "AbortError" ? "The request timed out." : error.message
+            }`;
         }
     } finally {
         clearTimeout(timeout);
@@ -193,11 +309,15 @@ async function requestBooks(query, matching = false) {
     }
 }
 
-const selectedSubjects = () => [...document.querySelectorAll("#traits input:checked")].map((input) => input.value);
+const selectedSubjects = () =>
+    [...document.querySelectorAll("#traits input:checked")].map((input) => input.value);
 
 $("#recommend").onclick = () => {
     const subjects = selectedSubjects();
-    if (!subjects.length || subjects.length > 3) { $("#preference-status").textContent = "Choose between 1 and 3 subjects."; return; }
+    if (!subjects.length || subjects.length > 3) {
+        $("#preference-status").textContent = "Choose between 1 and 3 subjects.";
+        return;
+    }
     $("#preference-status").textContent = "";
     page = 1;
     requestBooks(subjects.join(" OR "), true);
@@ -209,28 +329,41 @@ $("#search-form").onsubmit = (event) => {
     if (!query) return;
     const tropes = parseTropeQuery(query);
     if (tropes) {
-        chooseSeed({id: "query", title: "Your trope combination", authors: "", authorNames: [], subjects: tropes});
-        document.querySelectorAll("#traits input").forEach(input => input.checked = true);
+        chooseSeed({
+            id: "query",
+            title: "Your trope combination",
+            authors: "",
+            authorNames: [],
+            subjects: tropes
+        });
+        document.querySelectorAll("#traits input").forEach((input) => {
+            input.checked = true;
+        });
         $("#recommend").click();
         return;
     }
-    page = 1; searchPage = 1; searchQuery = query;
+    page = 1;
+    searchPage = 1;
+    searchQuery = query;
     requestBooks(query);
 };
 
 $("#more").onclick = () => {
     if (currentMatching) {
         const nextStart = page * RECOMMENDATION_PAGE_SIZE;
-        if (nextStart < recommendationRows.length) { page++; renderRecommendationPage(); }
+        if (nextStart < recommendationRows.length) {
+            page += 1;
+            renderRecommendationPage();
+        }
         return;
     }
-    page++;
+    page += 1;
     requestBooks(currentQuery, false);
 };
 
 $("#previous").onclick = () => {
     if (page <= 1) return;
-    page--;
+    page -= 1;
     if (currentMatching) {
         renderRecommendationPage();
         return;
@@ -239,7 +372,8 @@ $("#previous").onclick = () => {
 };
 
 $("#back-to-search").onclick = () => {
-    controller?.abort(); sequence++;
+    controller?.abort();
+    sequence += 1;
     if (!searchQuery) return;
     page = searchPage;
     $("#back-to-search").hidden = true;
@@ -247,7 +381,8 @@ $("#back-to-search").onclick = () => {
 };
 
 $("#saved").onclick = () => {
-    controller?.abort(); sequence++;
+    controller?.abort();
+    sequence += 1;
     setView("saved");
     $("#back-to-search").hidden = true;
     $("#books").removeAttribute("aria-busy");
@@ -274,27 +409,49 @@ $("#discover").onclick = () => {
     requestBooks(query);
 };
 
-$("#close").onclick = () => { $("#detail").close(); };
-count();
-if (corrupt) $("#preference-status").textContent = "Your saved list could not be read. Search is still available.";
+$("#close").onclick = () => {
+    $("#detail").close();
+};
+
 $("#add-trait").onclick = () => {
     const input = $("#custom-trait");
-    const values = input.value.split(/[+,]/).map(value => value.trim()).filter(Boolean);
+    const values = input.value
+        .split(/[+,]/)
+        .map((value) => value.trim())
+        .filter(Boolean);
     for (const value of values) {
         if (value.length > 100) continue;
-        const existing = [...document.querySelectorAll("#traits input")].find(item => item.value.toLowerCase() === value.toLowerCase());
-        if (existing) { existing.checked = true; continue; }
+        const existing = [...document.querySelectorAll("#traits input")].find(
+            (item) => item.value.toLowerCase() === value.toLowerCase()
+        );
+        if (existing) {
+            existing.checked = true;
+            continue;
+        }
         const label = document.createElement("label");
         label.className = "trait";
         const check = document.createElement("input");
-        check.type = "checkbox"; check.value = value; check.checked = true;
+        check.type = "checkbox";
+        check.value = value;
+        check.checked = true;
         label.append(check, document.createTextNode(value));
         $("#traits").append(label);
     }
     input.value = "";
     $("#recommend").disabled = !selectedSubjects().length;
-    $("#preference-status").textContent = selectedSubjects().length > 3 ? "Choose up to 3 subjects." : "";
+    $("#preference-status").textContent =
+        selectedSubjects().length > 3 ? "Choose up to 3 subjects." : "";
 };
-$("#custom-trait").onkeydown = event => {
-    if (event.key === "Enter") { event.preventDefault(); $("#add-trait").click(); }
+
+$("#custom-trait").onkeydown = (event) => {
+    if (event.key === "Enter") {
+        event.preventDefault();
+        $("#add-trait").click();
+    }
 };
+
+count();
+if (corrupt) {
+    $("#preference-status").textContent =
+        "Your saved list could not be read. Search is still available.";
+}
