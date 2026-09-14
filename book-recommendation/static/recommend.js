@@ -22,8 +22,22 @@ export function rankBooks(
         era = "any"
     } = {}
 ) {
-    const wanted = new Set(
-        subjects.map(normalise)
+    const concepts = subjects.map(subject =>
+        typeof subject === "string"
+            ? {
+                label: subject,
+                terms: [normalise(subject)]
+            }
+            : {
+                label: subject.label,
+                terms: [
+                    ...new Set(
+                        (subject.terms || [subject.label])
+                            .map(normalise)
+                            .filter(Boolean)
+                    )
+                ]
+            }
     );
 
     const seen = new Set();
@@ -46,27 +60,30 @@ export function rankBooks(
             return true;
         })
         .map(b => {
-            const matches = [
-                ...new Set(
-                    (b.subjects || []).filter(
-                        s =>
-                            wanted.has(
-                                normalise(s)
-                            )
+            const bookSubjects = new Set(
+                (b.subjects || [])
+                    .map(normalise)
+                    .filter(Boolean)
+            );
+
+            const matches = concepts
+                .filter(concept =>
+                    concept.terms.some(term =>
+                        bookSubjects.has(term)
                     )
                 )
-            ];
+                .map(concept => concept.label);
 
             const matchScore =
-                wanted.size
-                    ? matches.length / wanted.size
+                concepts.length
+                    ? matches.length / concepts.length
                     : 0;
 
             return {
                 ...b,
                 matches,
                 matchCount: matches.length,
-                matchTotal: wanted.size,
+                matchTotal: concepts.length,
                 matchScore
             };
         })
