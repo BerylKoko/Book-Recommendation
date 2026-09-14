@@ -76,8 +76,7 @@ export function rankBooks(
         })
         .filter(
             b =>
-                b.matchTotal > 0 &&
-                b.matchCount === b.matchTotal &&
+                b.matchCount > 0 &&
                 (
                     !newAuthor ||
                     !authors(b).some(
@@ -98,6 +97,7 @@ export function rankBooks(
         )
         .sort(
             (a, b) =>
+                b.matchCount - a.matchCount ||
                 b.aliasMatchCount - a.aliasMatchCount ||
                 a.title.localeCompare(b.title)
         );
