@@ -3,6 +3,7 @@ const $ = (selector) => document.querySelector(selector);
 const KEY = "bookmatch:reading-list:v1";
 const RECOMMENDATION_PAGE_SIZE = 12;
 const MAX_MATCH_PAGES = 3;
+const MAX_RECOMMENDATION_CANDIDATES = 72;
 const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (character) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[character]);
 
 let saved = [];
@@ -106,6 +107,9 @@ async function fetchBookPage(query, requestedPage, matching, signal) {
     return data;
 }
 
+const subjectQuery = (subject) =>
+    `subject:${subject.replace(/["\\():]/g, " ").trim().split(/\s+/).join(" ")}`;
+
 async function requestBooks(query, matching = false) {
     if (!query) return;
     currentQuery = query;
@@ -128,20 +132,92 @@ async function requestBooks(query, matching = false) {
     const timeout = setTimeout(() => abort.abort(), 16000);
     try {
         if (matching) {
-            const firstPage = await fetchBookPage(query, 1, true, abort.signal);
+            const queries = traits.map(subjectQuery);
+            const firstPages = await Promise.all(
+                queries.map((subjectSearch) =>
+                    fetchBookPage(subjectSearch, 1, true, abort.signal)
+                )
+            );
             if (id !== sequence) return;
-            const limit = firstPage.limit || 24;
-            const pagesToCheck = Math.min(MAX_MATCH_PAGES, Math.max(1, Math.ceil(firstPage.total / limit)));
-            let candidates = [...firstPage.books];
-            if (pagesToCheck > 1) {
-                const remainingPages = await Promise.all(Array.from({length:pagesToCheck - 1}, (_, index) => fetchBookPage(query, index + 2, true, abort.signal)));
-                if (id !== sequence) return;
-                for (const data of remainingPages) candidates.push(...data.books);
-            }
-            total = firstPage.total;
-            recommendationRows = rankBooks(candidates, matchSeed, traits, preferences);
+
+            const limit = firstPages[0]?.limit || 24;
+            const pagesPerSubject = Math.min(
+                MAX_MATCH_PAGES,
+                Math.max(
+                    1,
+                    Math.ceil(
+                        MAX_RECOMMENDATION_CANDIDATES /
+                        (limit * traits.length)
+                    )
+                )
+            );
+
+            const extraRequests = [];
+            firstPages.forEach((data, subjectIndex) => {
+                const subjectLimit = data.limit || limit;
+                const availablePages = Math.min(
+                    pagesPerSubject,
+                    Math.max(1, Math.ceil(data.total / subjectLimit))
+                );
+
+                for (let requestedPage = 2; requestedPage <= availablePages; requestedPage++) {
+                    extraRequests.push(
+                        fetchBookPage(
+                            queries[subjectIndex],
+                            requestedPage,
+                            true,
+                            abort.signal
+                        ).then((pageData) => ({subjectIndex, pageData}))
+                    );
+                }
+            });
+
+            const extraPages = await Promise.all(extraRequests);
+            if (id !== sequence) return;
+
+            const candidatesById = new Map();
+            const addCandidates = (books, subject) => {
+                for (const book of books) {
+                    const existing = candidatesById.get(book.id);
+                    if (existing) {
+                        if (!existing.searchMatches.includes(subject)) {
+                            existing.searchMatches.push(subject);
+                        }
+                    } else {
+                        candidatesById.set(book.id, {
+                            ...book,
+                            searchMatches: [subject]
+                        });
+                    }
+                }
+            };
+
+            firstPages.forEach((data, subjectIndex) => {
+                addCandidates(data.books, traits[subjectIndex]);
+            });
+
+            extraPages.forEach(({subjectIndex, pageData}) => {
+                addCandidates(pageData.books, traits[subjectIndex]);
+            });
+
+            const candidates = [...candidatesById.values()];
+            const ranked = rankBooks(
+                candidates,
+                matchSeed,
+                traits,
+                preferences
+            );
+
+            total = firstPages.reduce(
+                (sum, data) => sum + (data.total || 0),
+                0
+            );
+            recommendationRows = ranked.slice(
+                0,
+                MAX_RECOMMENDATION_CANDIDATES
+            );
             recommendationCandidateCount = candidates.length;
-            recommendationCheckedPages = pagesToCheck;
+            recommendationCheckedPages = firstPages.length + extraPages.length;
             page = 1;
             renderRecommendationPage();
         } else {
@@ -179,10 +255,7 @@ $("#recommend").onclick = () => {
     if (!subjects.length || subjects.length > 3) { $("#preference-status").textContent = "Choose between 1 and 3 subjects."; return; }
     $("#preference-status").textContent = "";
     page = 1;
-    const subjectQuery = subjects
-        .map((subject) => `subject:${subject.replace(/["\\():]/g, " ").trim().split(/\s+/).join(" ")}`)
-        .join(" OR ");
-    requestBooks(subjectQuery, true);
+    requestBooks(subjects.join(" OR "), true);
 };
 
 $("#search-form").onsubmit = (event) => {
