@@ -69,7 +69,7 @@ def build_queries(subjects, genre_map=None):
     if pairing:
         identities = _identity_phrases(pairing)
 
-        # Start with the combinations most likely to surface the requested niche.
+        # Start with combinations that directly express the reader's niche.
         if "sports" in non_pairing and not any(
             concept in discovery.SPORTS for concept in non_pairing
         ):
@@ -87,8 +87,8 @@ def build_queries(subjects, genre_map=None):
                     [*other_context, "sports"],
                 )
 
-        # Pair the identity with each requested non-pairing concept. These are
-        # intentionally looser than one all-three/all-four query.
+        # Pair the identity with each non-pairing concept. These are deliberately
+        # looser than requiring every selected term in one provider query.
         for index, concept in enumerate(non_pairing):
             add(
                 "Google Books",
@@ -99,22 +99,27 @@ def build_queries(subjects, genre_map=None):
                 [concept],
             )
 
-        # A couple of identity-only searches provide recall for books whose
-        # descriptions contain the remaining requested tropes.
+        # Identity-only searches recover books whose descriptions/categories
+        # contain the remaining selected concepts.
         add("Google Books", identities[0])
         if len(identities) > 1:
             add("Google Books", identities[1])
 
-        # Open Library is useful for subjects/ISBNs/covers, but its fuzzy search
-        # is never treated as proof of the selected pairing.
+        # Open Library is supplemental. Its fuzzy query membership is never
+        # treated as pairing evidence; only the returned book metadata is.
         open_parts = [identities[0]]
         open_parts.extend(_context_phrase(c) for c in non_pairing[:2])
         add("Open Library", _query_text(open_parts))
+        if pairing == "mm":
+            add("Open Library", 'subject:"gay men"')
+            add("Open Library", 'subject:"gay romance"')
+        else:
+            add("Open Library", 'subject:"lesbian romance"')
+            add("Open Library", 'subject:"lesbians"')
 
     else:
-        # General trope combinations: search singles first, then pairs, then the
-        # full combination. This avoids an empty result just because one catalog
-        # does not describe all selected concepts in the same record.
+        # General trope combinations: singles, then pairs, then full combination.
+        # This prevents sparse catalog metadata from collapsing recall to zero.
         for concept in concepts:
             add(
                 "Google Books",
@@ -159,8 +164,7 @@ def _run_batch(tasks):
         )
 
         if result["ok"] and provider == "Google Books":
-            # Search membership is only weak evidence for non-pairing concepts.
-            # It must never turn an arbitrary result into an M/M or F/F book.
+            # Search membership is weak evidence only for non-pairing concepts.
             safe_hints = [
                 concept for concept in hint_concepts
                 if concept not in PAIRINGS
@@ -200,7 +204,7 @@ def recommend(subjects, genre_map=None):
     resolved = discovery.resolve_concepts(subjects, genre_map)
     labels = [label for label, _ in resolved]
     cache_key = (
-        "staged-recommend-v1",
+        "staged-recommend-v2",
         tuple((label, concept) for label, concept in resolved),
     )
 
