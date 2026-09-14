@@ -3,7 +3,11 @@ Author: BERYL KOKO
 """
 
 from collections import OrderedDict
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import json
+from pathlib import Path
 import re
+import threading
 import time
 
 import requests
@@ -15,17 +19,131 @@ app = Flask(
 )
 
 cache = OrderedDict()
+cache_lock = threading.Lock()
 
 SEARCH_LIMIT = 12
 MATCH_LIMIT = 24
+MAX_CONCEPT_ALIASES = 8
+MAX_RECOMMENDATION_CANDIDATES = 72
+MAX_FANOUT_WORKERS = 8
+
+
+def normalise_tag(value):
+    value = str(value or "").strip().lower()
+    value = value.replace("&", " and ").replace("+", " and ")
+    value = re.sub(r"[^a-z0-9]+", " ", value)
+    return re.sub(r"\s+", " ", value).strip()
+
+
+def load_genre_map():
+    path = Path(__file__).with_name("static") / "genres.json"
+
+    try:
+        with path.open("r", encoding="utf-8") as file:
+            raw = json.load(file)
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+    genre_map = {}
+
+    for canonical, related in raw.items():
+        canonical_tag = normalise_tag(canonical)
+        if not canonical_tag:
+            continue
+
+        genre_map[canonical_tag] = list(
+            dict.fromkeys(
+                normalise_tag(term)
+                for term in (related or [])
+                if normalise_tag(term)
+            )
+        )
+
+    return genre_map
+
+
+GENRE_MAP = load_genre_map()
+ALIAS_OWNERS = {}
+
+for canonical_tag, related_tags in GENRE_MAP.items():
+    for alias in related_tags:
+        ALIAS_OWNERS.setdefault(alias, []).append(canonical_tag)
+
+# The trope map uses "gay romance" as its canonical label, while Open Library
+# seed books often expose shorthand such as "MM". These bridges only choose the
+# JSON concept; the JSON file still supplies the concept's normal aliases.
+CONCEPT_BRIDGES = {
+    "mm": "gay romance",
+    "m m": "gay romance"
+}
+
+# A few high-signal search spellings are worth trying for the MM concept because
+# Open Library's catalog uses several incompatible labels for the same idea.
+CONCEPT_SEARCH_EXTRAS = {
+    "gay romance": [
+        "mm",
+        "m m",
+        "gay romance",
+        "gay men",
+        "gay fiction",
+        "mm romance",
+        "queer romance",
+        "lgbtq romance"
+    ]
+}
+
+
+def resolve_concept(label):
+    selected = normalise_tag(label)
+    canonical = None
+
+    if selected in GENRE_MAP:
+        canonical = selected
+    elif selected in CONCEPT_BRIDGES:
+        canonical = CONCEPT_BRIDGES[selected]
+    else:
+        owners = ALIAS_OWNERS.get(selected, [])
+        if len(owners) == 1:
+            canonical = owners[0]
+
+    terms = []
+
+    def add(term):
+        term = normalise_tag(term)
+        if term and term not in terms:
+            terms.append(term)
+
+    add(selected)
+
+    if canonical:
+        for term in CONCEPT_SEARCH_EXTRAS.get(canonical, []):
+            add(term)
+        add(canonical)
+        for term in GENRE_MAP.get(canonical, []):
+            add(term)
+
+    return {
+        "label": label,
+        "canonical": canonical or selected,
+        "aliases": terms[:MAX_CONCEPT_ALIASES]
+    }
+
+
+def subject_query(term):
+    cleaned = str(term).replace('"', " ").replace("\\", " ")
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return f'subject:"{cleaned}"'
 
 
 def get_books(query, page=1, sort="relevance", matching=False):
     cache_key = (query, page, sort, matching)
 
-    # Use cached results for up to 10 minutes
-    if cache_key in cache:
-        saved_time, saved_result = cache[cache_key]
+    # Use cached results for up to 10 minutes.
+    with cache_lock:
+        cached = cache.get(cache_key)
+
+    if cached:
+        saved_time, saved_result = cached
 
         if time.monotonic() - saved_time < 600:
             return saved_result
@@ -65,7 +183,7 @@ def get_books(query, page=1, sort="relevance", matching=False):
     for item in books:
         book_id = item.get("key", "")
 
-        # Only keep valid Open Library work IDs
+        # Only keep valid Open Library work IDs.
         if not re.fullmatch(r"/works/OL\d+W", book_id):
             continue
 
@@ -117,17 +235,139 @@ def get_books(query, page=1, sort="relevance", matching=False):
         "source": "Open Library"
     }
 
-    # Save result in cache
-    cache[cache_key] = (
-        time.monotonic(),
-        result
-    )
+    # Save result in cache.
+    with cache_lock:
+        cache[cache_key] = (
+            time.monotonic(),
+            result
+        )
 
-    # Prevent cache from growing forever
-    if len(cache) > 128:
-        cache.popitem(last=False)
+        # Prevent cache from growing forever.
+        if len(cache) > 128:
+            cache.popitem(last=False)
 
     return result
+
+
+def get_recommendation_candidates(subjects):
+    concepts = [resolve_concept(subject) for subject in subjects]
+    concept_pools = [dict() for _ in concepts]
+    tasks = []
+
+    for concept_index, concept in enumerate(concepts):
+        for alias in concept["aliases"]:
+            tasks.append((concept_index, alias))
+
+    if not tasks:
+        return {
+            "books": [],
+            "candidateCount": 0,
+            "checkedQueries": 0,
+            "totalQueries": 0,
+            "concepts": concepts
+        }
+
+    checked_queries = 0
+
+    def fetch_alias(concept_index, alias):
+        try:
+            result = get_books(
+                subject_query(alias),
+                page=1,
+                matching=True
+            )
+            return concept_index, alias, result
+        except (requests.RequestException, ValueError):
+            return concept_index, alias, None
+
+    workers = min(MAX_FANOUT_WORKERS, len(tasks))
+
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        futures = [
+            executor.submit(fetch_alias, concept_index, alias)
+            for concept_index, alias in tasks
+        ]
+
+        for future in as_completed(futures):
+            concept_index, alias, result = future.result()
+
+            if result is None:
+                continue
+
+            checked_queries += 1
+            pool = concept_pools[concept_index]
+
+            for book in result["books"]:
+                existing = pool.get(book["id"])
+
+                if existing:
+                    existing["aliases"].add(alias)
+                    existing["book"]["subjects"] = list(
+                        dict.fromkeys(
+                            existing["book"].get("subjects", [])
+                            + book.get("subjects", [])
+                        )
+                    )[:100]
+                else:
+                    pool[book["id"]] = {
+                        "book": book,
+                        "aliases": {alias}
+                    }
+
+    if checked_queries == 0:
+        raise requests.RequestException(
+            "All recommendation searches failed."
+        )
+
+    if any(not pool for pool in concept_pools):
+        common_ids = set()
+    else:
+        common_ids = set(concept_pools[0])
+        for pool in concept_pools[1:]:
+            common_ids &= set(pool)
+
+    candidates = []
+
+    for book_id in common_ids:
+        base_book = dict(concept_pools[0][book_id]["book"])
+        evidence = {}
+        alias_match_count = 0
+        combined_subjects = []
+
+        for concept, pool in zip(concepts, concept_pools):
+            entry = pool[book_id]
+            aliases = sorted(entry["aliases"])
+            evidence[concept["label"]] = aliases
+            alias_match_count += len(aliases)
+            combined_subjects.extend(
+                entry["book"].get("subjects", [])
+            )
+
+        base_book["subjects"] = list(
+            dict.fromkeys(combined_subjects)
+        )[:100]
+        base_book["conceptMatches"] = [
+            concept["label"]
+            for concept in concepts
+        ]
+        base_book["conceptEvidence"] = evidence
+        base_book["aliasMatchCount"] = alias_match_count
+        candidates.append(base_book)
+
+    candidates.sort(
+        key=lambda book: (
+            -book.get("aliasMatchCount", 0),
+            str(book.get("title", "")).lower()
+        )
+    )
+
+    return {
+        "books": candidates[:MAX_RECOMMENDATION_CANDIDATES],
+        "candidateCount": len(candidates),
+        "checkedQueries": checked_queries,
+        "totalQueries": len(tasks),
+        "concepts": concepts
+    }
 
 
 @app.route("/")
@@ -233,6 +473,40 @@ def api_books():
         return jsonify(
             error=(
                 "Book search is temporarily unavailable. "
+                "Please try again."
+            )
+        ), 502
+
+
+@app.get("/api/recommend")
+def api_recommend():
+    subjects = [
+        subject.strip()
+        for subject in request.args.getlist("subject")
+        if subject.strip()
+    ]
+
+    if not 1 <= len(subjects) <= 3:
+        return jsonify(
+            error="Choose between 1 and 3 subjects."
+        ), 400
+
+    if any(len(subject) > 100 for subject in subjects):
+        return jsonify(
+            error="A selected subject is too long."
+        ), 400
+
+    try:
+        return jsonify(
+            get_recommendation_candidates(subjects)
+        )
+    except (
+        requests.RequestException,
+        ValueError
+    ):
+        return jsonify(
+            error=(
+                "Book recommendations are temporarily unavailable. "
                 "Please try again."
             )
         ), 502
