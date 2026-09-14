@@ -69,16 +69,11 @@ for canonical_tag, related_tags in GENRE_MAP.items():
     for alias in related_tags:
         ALIAS_OWNERS.setdefault(alias, []).append(canonical_tag)
 
-# The trope map uses "gay romance" as its canonical label, while Open Library
-# seed books often expose shorthand such as "MM". These bridges only choose the
-# JSON concept; the JSON file still supplies the concept's normal aliases.
 CONCEPT_BRIDGES = {
     "mm": "gay romance",
     "m m": "gay romance"
 }
 
-# A few high-signal search spellings are worth trying for the MM concept because
-# Open Library's catalog uses several incompatible labels for the same idea.
 CONCEPT_SEARCH_EXTRAS = {
     "gay romance": [
         "mm",
@@ -138,7 +133,6 @@ def subject_query(term):
 def get_books(query, page=1, sort="relevance", matching=False):
     cache_key = (query, page, sort, matching)
 
-    # Use cached results for up to 10 minutes.
     with cache_lock:
         cached = cache.get(cache_key)
 
@@ -174,7 +168,6 @@ def get_books(query, page=1, sort="relevance", matching=False):
     )
 
     response.raise_for_status()
-
     data = response.json()
 
     books = data.get("docs", [])
@@ -183,7 +176,6 @@ def get_books(query, page=1, sort="relevance", matching=False):
     for item in books:
         book_id = item.get("key", "")
 
-        # Only keep valid Open Library work IDs.
         if not re.fullmatch(r"/works/OL\d+W", book_id):
             continue
 
@@ -235,14 +227,12 @@ def get_books(query, page=1, sort="relevance", matching=False):
         "source": "Open Library"
     }
 
-    # Save result in cache.
     with cache_lock:
         cache[cache_key] = (
             time.monotonic(),
             result
         )
 
-        # Prevent cache from growing forever.
         if len(cache) > 128:
             cache.popitem(last=False)
 
@@ -319,24 +309,32 @@ def get_recommendation_candidates(subjects):
             "All recommendation searches failed."
         )
 
-    if any(not pool for pool in concept_pools):
-        common_ids = set()
-    else:
-        common_ids = set(concept_pools[0])
-        for pool in concept_pools[1:]:
-            common_ids &= set(pool)
+    all_ids = set()
+    for pool in concept_pools:
+        all_ids.update(pool)
 
     candidates = []
 
-    for book_id in common_ids:
-        base_book = dict(concept_pools[0][book_id]["book"])
+    for book_id in all_ids:
+        matching_entries = []
+
+        for concept, pool in zip(concepts, concept_pools):
+            entry = pool.get(book_id)
+            if entry:
+                matching_entries.append((concept, entry))
+
+        if not matching_entries:
+            continue
+
+        base_book = dict(matching_entries[0][1]["book"])
         evidence = {}
+        concept_matches = []
         alias_match_count = 0
         combined_subjects = []
 
-        for concept, pool in zip(concepts, concept_pools):
-            entry = pool[book_id]
+        for concept, entry in matching_entries:
             aliases = sorted(entry["aliases"])
+            concept_matches.append(concept["label"])
             evidence[concept["label"]] = aliases
             alias_match_count += len(aliases)
             combined_subjects.extend(
@@ -346,16 +344,14 @@ def get_recommendation_candidates(subjects):
         base_book["subjects"] = list(
             dict.fromkeys(combined_subjects)
         )[:100]
-        base_book["conceptMatches"] = [
-            concept["label"]
-            for concept in concepts
-        ]
+        base_book["conceptMatches"] = concept_matches
         base_book["conceptEvidence"] = evidence
         base_book["aliasMatchCount"] = alias_match_count
         candidates.append(base_book)
 
     candidates.sort(
         key=lambda book: (
+            -len(book.get("conceptMatches", [])),
             -book.get("aliasMatchCount", 0),
             str(book.get("title", "")).lower()
         )
