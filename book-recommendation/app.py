@@ -8,6 +8,7 @@ import re
 
 import requests
 import discovery
+import recommendation
 from flask import Flask, jsonify, render_template, request
 
 
@@ -51,7 +52,7 @@ def load_genre_map():
 
 GENRE_MAP = load_genre_map()
 def get_recommendation_candidates(subjects):
-    return discovery.recommend(subjects, GENRE_MAP)
+    return recommendation.recommend(subjects, GENRE_MAP)
 
 
 @app.route("/")
