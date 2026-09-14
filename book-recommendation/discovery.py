@@ -15,7 +15,7 @@ import re
 import threading
 import time
 import unicodedata
-from urllib.parse import quote, urlencode
+from urllib.parse import quote
 
 import requests
 
@@ -28,7 +28,7 @@ def normalise(value):
 # Only equivalent or narrower evidence belongs here. genres.json remains a
 # retrieval vocabulary; its related topics must never become inferred facts.
 EQUIVALENTS = {
-    'mm': ['m/m', 'm m', 'mm romance', 'm/m romance', 'male male', 'male/male romance', 'gay romance', 'gay love stories', 'gay men', 'gay fiction'],
+    'mm': ['m/m', 'm m', 'mm romance', 'm/m romance', 'male male', 'male/male romance', 'gay romance', 'gay love stories', 'male x male'],
     'ff': ['f/f', 'f f', 'ff romance', 'lesbian romance', 'sapphic romance'],
     'college': ['university', 'universities', 'campus', 'college romance', 'university romance', 'campus romance', 'college students', 'undergraduates'],
     'sports': ['sport', 'sports romance', 'sports fiction', 'athlete', 'athletes', 'athletic romance'],
@@ -46,7 +46,7 @@ EQUIVALENTS = {
 }
 SPORTS = ('hockey', 'football', 'soccer', 'baseball', 'basketball', 'tennis',
           'swimming', 'figure skating', 'motorsport', 'formula one', 'boxing',
-          'mma', 'rugby', 'lacrosse', 'volleyball', 'gymnastics', 'fencing', 'wrestling')
+          'mma', 'rugby', 'lacrosse', 'volleyball', 'gymnastics', 'fencing', 'wrestling', 'water polo')
 IMPLIES = {sport: ['sports'] for sport in SPORTS}
 IMPLIES.update({'mm': ['queer romance', 'romance'], 'ff': ['queer romance', 'romance'],
                 'dark romance': ['romance'], 'roommates': ['forced proximity']})
@@ -64,7 +64,8 @@ def contains(text, term):
 
 def identity(book):
     # Subtitle/edition variants merge only with the same author; no fuzzy title guessing.
-    title = re.split(r'[:(]', book.get('title', ''))[0]
+    title = re.sub(r'\s*\([^)]*(?:edition|cover|book \d|#\d)[^)]*\)', '', book.get('title', ''), flags=re.I)
+    title = re.sub(r':\s*(?:an? (?:mm|m/m|gay|novel|romance)\b).*$', '', title, flags=re.I)
     title = re.sub(r"['’]", '', title)
     authors = book.get('authorNames') or [book.get('authors', '')]
     return normalise(title), tuple(sorted(re.sub(r'[^a-z0-9]', '', normalise(a)) for a in authors))
@@ -129,7 +130,7 @@ def provider_books(provider, query, limit=40):
                 params = {'q': query, 'maxResults': min(limit, 40), 'printType': 'books'}
                 if os.environ.get('GOOGLE_BOOKS_API_KEY'):
                     params['key'] = os.environ['GOOGLE_BOOKS_API_KEY']
-            response = requests.get(url, params=params, timeout=(2, 4),
+            response = requests.get(url, params=params, timeout=(4, 6),
                                     headers={'User-Agent': 'BerylBookDiscovery/2.0 (book recommendation project)'})
             response.raise_for_status()
             data = response.json()
@@ -209,10 +210,11 @@ def concept_evidence(book, concept):
     terms = [concept, *EQUIVALENTS.get(concept, [])]
     terms += [tag for tag, parents in IMPLIES.items() if concept in parents]
     for subject in book.get('subjects', []):
-        if any(contains(subject, term) for term in terms):
+        if canonical(subject) == concept or any(contains(subject, term) for term in terms):
             return {'kind': 'catalog subject', 'note': subject, 'url': book.get('url', '')}
     # Titles alone are not evidence: "College Hockey Guide" is not MM fiction.
-    description = ' '.join([book.get('subtitle', ''), book.get('description', '')])
+    description = ' '.join(sentence for sentence in re.split(r'(?<=[.!?])\s+', ' '.join([book.get('subtitle', ''), book.get('description', '')]))
+                           if not re.search(r'for (?:fans|readers) of|also by|author of|graduated from', sentence, re.I))
     for term in terms:
         if contains(description, term):
             # Reject simple explicit negation. Richer semantics require reviewed tags.
@@ -231,7 +233,7 @@ def rank_candidates(books, subjects):
         # request with MF/FF books just because both are about campus hockey.
         if any(concept in ('mm', 'ff') and label not in evidence for label, concept in concepts):
             continue
-        if not evidence:
+        if len(evidence) < (2 if len(concepts) == 3 else 1):
             continue
         book['conceptMatches'] = list(evidence)
         book['conceptEvidence'] = evidence

@@ -64,7 +64,7 @@
                     <h2>1. Choose a starting book</h2>
 
                     <label for="query">
-                        Book title or author
+                        Book title, author, or trope combination
                     </label>
 
                     <div class="search">
@@ -73,7 +73,7 @@
                             name="query"
                             maxlength="200"
                             required
-                            placeholder="e.g. The Hobbit"
+                            placeholder="e.g. Iced Out or mm+sports+college"
                         >
 
                         <button class="primary">
@@ -90,11 +90,17 @@
 
                     <fieldset>
                         <legend>
-                            Subjects from this book · choose up to 3
+                            Subjects and tropes · choose up to 3
                         </legend>
 
                         <div id="traits"></div>
                     </fieldset>
+
+                    <label for="custom-trait">Add a subject or trope</label>
+                    <div class="search">
+                        <input id="custom-trait" maxlength="100" placeholder="e.g. mm, sports, college">
+                        <button id="add-trait" type="button">Add</button>
+                    </div>
 
                     <label class="check">
                         <input
@@ -143,17 +149,16 @@
                     </summary>
 
                     <p>
-                        I use Open Library subjects to find books related
-                        to the ones you already enjoy. Choose up to three
-                        subjects, and Bookmatch ranks the results by how
-                        many of those subjects they share.
+                        Choose up to three subjects or tropes. Bookmatch combines
+                        sourced book-level tags with Open Library and Google Books
+                        metadata, and puts books matching your whole combination first.
                     </p>
 
                     <p>
                         You can also filter for a different author or
-                        publication era. Open Library's subject data can
-                        be incomplete, so the matching subjects are shown
-                        with each recommendation.
+                        publication era. Open Details to see the evidence behind each match.
+                        Missing tags are shown on partial matches. Coverage is strongest
+                        for indexed books; the catalogs do not describe every trope.
                     </p>
                 </details>
 
@@ -199,7 +204,7 @@
     </main>
 
     <footer>
-        Catalog &amp; covers:
+        Book data: Bookmatch trope index, Google Books &amp;
         <a href="https://openlibrary.org">
             Open Library
         </a>

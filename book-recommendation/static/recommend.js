@@ -40,6 +40,8 @@ export function rankBooks(
         .filter(b => {
             if (
                 b.id === seed.id ||
+                (b.alternateIds || []).includes(seed.id) ||
+                (seed.alternateIds || []).includes(b.id) ||
                 seen.has(b.id)
             ) {
                 return false;
@@ -98,7 +100,13 @@ export function rankBooks(
         .sort(
             (a, b) =>
                 b.matchCount - a.matchCount ||
-                b.aliasMatchCount - a.aliasMatchCount ||
+                (b.evidenceScore || 0) - (a.evidenceScore || 0) ||
                 a.title.localeCompare(b.title)
         );
+}
+// Explicit + notation is an optional shortcut; title/author search stays intact.
+export function parseTropeQuery(query) {
+    const parts = query.split("+").map(s => s.trim()).filter(Boolean);
+    const known = new Set(["mm", "m m", "gay romance", "ff", "f f", "lesbian romance", "queer romance", "sports", "sports romance", "college", "university", "hockey", "football", "baseball", "basketball", "dark romance", "mafia romance", "enemies to lovers", "friends to lovers", "roommates", "hurt comfort", "fake dating", "paranormal romance", "fantasy", "slow burn"]);
+    return parts.length >= 2 && parts.every(part => known.has(normalise(part))) ? [...new Set(parts)] : null;
 }
