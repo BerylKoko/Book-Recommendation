@@ -4,75 +4,6 @@ const KEY = "bookmatch:reading-list:v1";
 const RECOMMENDATION_PAGE_SIZE = 12;
 const MAX_MATCH_PAGES = 3;
 const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (character) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[character]);
-const normaliseTag = (value) => String(value ?? "").trim().toLocaleLowerCase();
-const genreMapPromise = fetch("/static/genres.json")
-    .then((response) => response.ok ? response.json() : {})
-    .catch(() => ({}));
-
-function buildConcepts(subjects, genreMap) {
-    const aliases = new Map();
-
-    for (const [canonical, related] of Object.entries(genreMap || {})) {
-        const canonicalTag = normaliseTag(canonical);
-        const terms = [...new Set([canonicalTag, ...(related || []).map(normaliseTag)].filter(Boolean))];
-
-        for (const term of terms) {
-            if (!aliases.has(term)) aliases.set(term, new Set());
-            aliases.get(term).add(canonicalTag);
-        }
-    }
-
-    return subjects.map((subject) => {
-        const selected = normaliseTag(subject);
-        let terms = [selected];
-
-        if (genreMap?.[selected]) {
-            terms = [selected, ...genreMap[selected].map(normaliseTag)];
-        } else {
-            const owners = [...(aliases.get(selected) || [])];
-            if (owners.length && owners.length <= 2) {
-                for (const owner of owners) {
-                    terms.push(owner, ...(genreMap[owner] || []).map(normaliseTag));
-                }
-            }
-        }
-
-        return {
-            label: subject,
-            terms: [...new Set(terms.filter(Boolean))].slice(0, 10)
-        };
-    });
-}
-
-function buildSubjectQuery(concepts) {
-    const cleanedGroups = concepts.map((concept) =>
-        concept.terms
-            .map((term) => term.replace(/["\\():]/g, " ").trim())
-            .filter(Boolean)
-    );
-
-    const selected = [];
-    const seen = new Set();
-    let index = 0;
-
-    while (cleanedGroups.some((group) => index < group.length)) {
-        for (const group of cleanedGroups) {
-            const term = group[index];
-            if (!term || seen.has(term)) continue;
-
-            const clause = `subject:"${term}"`;
-            const nextQuery = [...selected, clause].join(" OR ");
-
-            if (nextQuery.length <= 190) {
-                selected.push(clause);
-                seen.add(term);
-            }
-        }
-        index++;
-    }
-
-    return selected.join(" OR ");
-}
 
 let saved = [];
 let corrupt = false;
@@ -175,7 +106,7 @@ async function fetchBookPage(query, requestedPage, matching, signal) {
     return data;
 }
 
-async function requestBooks(query, matching = false, matchConcepts = null) {
+async function requestBooks(query, matching = false) {
     if (!query) return;
     currentQuery = query;
     currentMatching = matching;
@@ -184,7 +115,7 @@ async function requestBooks(query, matching = false, matchConcepts = null) {
     controller = new AbortController();
     const abort = controller;
     const matchSeed = seed;
-    const traits = matchConcepts || selectedSubjects();
+    const traits = selectedSubjects();
     const preferences = {newAuthor:$("#new-author").checked,era:$("#era").value};
     const id = ++sequence;
     setView(matching ? "matches" : "search");
@@ -243,15 +174,15 @@ async function requestBooks(query, matching = false, matchConcepts = null) {
 
 const selectedSubjects = () => [...document.querySelectorAll("#traits input:checked")].map((input) => input.value);
 
-$("#recommend").onclick = async () => {
+$("#recommend").onclick = () => {
     const subjects = selectedSubjects();
     if (!subjects.length || subjects.length > 3) { $("#preference-status").textContent = "Choose between 1 and 3 subjects."; return; }
     $("#preference-status").textContent = "";
     page = 1;
-    const genreMap = await genreMapPromise;
-    const concepts = buildConcepts(subjects, genreMap);
-    const subjectQuery = buildSubjectQuery(concepts);
-    requestBooks(subjectQuery, true, concepts);
+    const subjectQuery = subjects
+        .map((subject) => `subject:${subject.replace(/["\\():]/g, " ").trim().split(/\s+/).join(" ")}`)
+        .join(" OR ");
+    requestBooks(subjectQuery, true);
 };
 
 $("#search-form").onsubmit = (event) => {
