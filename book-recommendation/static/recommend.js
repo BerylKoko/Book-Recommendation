@@ -46,7 +46,13 @@ export function rankBooks(
             return true;
         })
         .map(b => {
-            const matches = [
+            const searchMatches = Array.isArray(b.searchMatches)
+                ? b.searchMatches.filter(
+                    subject => wanted.has(normalise(subject))
+                )
+                : [];
+
+            const exactMatches = [
                 ...new Set(
                     (b.subjects || []).filter(
                         s =>
@@ -56,6 +62,10 @@ export function rankBooks(
                     )
                 )
             ];
+
+            const matches = searchMatches.length
+                ? [...new Set(searchMatches)]
+                : exactMatches;
 
             const matchScore =
                 wanted.size
