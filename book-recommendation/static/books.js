@@ -179,7 +179,9 @@ $("#recommend").onclick = () => {
     if (!subjects.length || subjects.length > 3) { $("#preference-status").textContent = "Choose between 1 and 3 subjects."; return; }
     $("#preference-status").textContent = "";
     page = 1;
-    const subjectQuery = subjects.map((subject) => `subject:"${subject.replace(/["\\]/g, "")}"`).join(" OR ");
+    const subjectQuery = subjects
+        .map((subject) => `subject:${subject.replace(/["\\():]/g, " ").trim().split(/\s+/).join(" ")}`)
+        .join(" OR ");
     requestBooks(subjectQuery, true);
 };
 
