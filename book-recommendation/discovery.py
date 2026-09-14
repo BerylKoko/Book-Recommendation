@@ -105,7 +105,8 @@ COOLDOWN = {}
 def cached(key, make):
     with LOCK:
         entry = CACHE.get(key)
-        if entry and time.monotonic() - entry[0] < 600:
+        ttl = 60 if entry and (entry[1].get('ok') is False or entry[1].get('unavailableSources')) else 600
+        if entry and time.monotonic() - entry[0] < ttl:
             return deepcopy(entry[1])
     result = make()
     with LOCK:
@@ -202,7 +203,7 @@ def merge_books(books):
 
 
 def concept_evidence(book, concept):
-    # Human-reviewed annotations include directional implications (hockey -> sports).
+    # Source-backed annotations include directional implications (hockey -> sports).
     for tag, evidence in book.get('evidence', {}).items():
         tag = canonical(tag)
         if concept == tag or concept in IMPLIES.get(tag, []):
@@ -270,7 +271,10 @@ def build_queries(subjects, genre_map=None):
 
 
 def recommend(subjects, genre_map=None):
-    subjects = list(dict.fromkeys(subjects))
+    unique = {}
+    for subject in subjects:
+        unique.setdefault(canonical(subject), subject)
+    subjects = list(unique.values())
     def make():
         tasks = build_queries(subjects, genre_map)
         with ThreadPoolExecutor(max_workers=8) as pool:

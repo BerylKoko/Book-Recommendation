@@ -118,6 +118,13 @@ class DiscoveryTests(unittest.TestCase):
         result = d.provider_books('Open Library', 'example')
         self.assertEqual(1998,result['books'][0]['year'])
 
+    @patch('discovery.provider_books')
+    def test_duplicate_aliases_do_not_inflate_match_counts(self, provider):
+        provider.side_effect = lambda source, *args: {'books': [], 'ok': False, 'provider': source}
+        result = d.recommend(['mm', 'gay romance', 'college'])
+        self.assertEqual(['mm', 'college'], [c['label'] for c in result['concepts']])
+        self.assertTrue(all(len(b['conceptMatches']) <= 2 for b in result['books']))
+
     def test_queries_search_combinations_with_bounded_fanout(self):
         tasks = d.build_queries(['mm', 'sports', 'college'])
         self.assertLessEqual(len(tasks),8)

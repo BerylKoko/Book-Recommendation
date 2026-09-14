@@ -157,7 +157,7 @@ async function requestBooks(query, matching = false) {
             const ranked = rankBooks(
                 data.books,
                 matchSeed,
-                traits,
+                data.concepts?.map(concept => concept.label) || traits,
                 preferences
             );
 

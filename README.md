@@ -1,160 +1,123 @@
 # Bookmatch
 
-A full-stack book discovery and recommendation web application built with Flask and vanilla JavaScript. Bookmatch helps readers move beyond a generic title search: choose a book you liked, select the subjects you want more of, refine the match, and explore related books using live Open Library data.
+Book recommendations built by Beryl Koko with Flask and vanilla JavaScript. Start with a book, choose up to three subjects or tropes, inspect why each recommendation matches, and save books to a reading list on your device.
 
-**Live Demo:** https://book-recommendation-1-e4km.onrender.com/
+The recommendation engine now answers combinations such as **MM + sports + college**, instead of intersecting the first page of three generic subject lists. The existing layout, cards, preferences, details dialog, reading list, and Previous/Next controls remain.
 
-> The live demo is hosted on Render's free tier, so the first request after a period of inactivity may take a short time to wake the server.
-
-## What Bookmatch Does
-
-Bookmatch supports two connected discovery flows:
-
-- **Book search** — search Open Library by title or author and browse paginated results.
-- **Related-book recommendations** — choose a seed book, select up to three subjects you liked about it, optionally require a different author, choose a publication-era preference, and rank related books by shared subjects.
-
-Users can also save books to a persistent reading list in the browser and inspect additional book details without leaving the application.
-
-## Features
-
-- Search books by title or author
-- Generate recommendations from a selected seed book
-- Select up to three subject preferences for recommendation matching
-- Rank recommendations by the number of shared selected subjects
-- Filter recommendations by author and publication era
-- Paginate ordinary searches through the API
-- Collect and rank recommendation candidates across multiple Open Library result pages
-- Paginate recommendation matches locally after ranking
-- Save and remove books from a browser-based reading list using `localStorage`
-- View book details in an interactive dialog
-- Responsive interface for different screen sizes
-- Loading, empty, and error states for API-driven interactions
-- Short-lived server-side caching to reduce repeated external requests
-
-## Tech Stack
-
-**Backend**
-- Python
-- Flask
-- Requests
-- Gunicorn
-
-**Frontend**
-- HTML
-- CSS
-- Vanilla JavaScript
-- Browser `localStorage`
-
-**Data & Deployment**
-- Open Library Search API
-- Render
-- Git / GitHub
-
-## How It Works
-
-The application uses Flask as a small backend layer between the browser and Open Library.
-
-1. A user searches for a book or starts a recommendation request in the browser.
-2. JavaScript sends the request to Bookmatch's Flask API.
-3. Flask queries Open Library and normalizes the returned book data into a consistent structure.
-4. For recommendations, the frontend compares candidate subjects with the user's selected preferences, removes unsuitable or duplicate results, applies optional filters, and ranks books by the number of matching subjects.
-5. JavaScript renders the resulting books dynamically and manages UI state, pagination, dialogs, and the saved reading list.
-
-This separation keeps the external data-provider logic in the backend while allowing the frontend to focus on interaction, ranking, and presentation.
-
-## Recommendation Logic
-
-Bookmatch intentionally uses **OR-style matching** rather than requiring every selected subject to appear on a book. A candidate must share at least one selected subject, and books matching more selected subjects rank higher.
-
-For recommendation requests, Bookmatch gathers candidates from multiple Open Library result pages before ranking them. The surviving recommendation matches are then paginated locally in groups of 12, so navigation reflects the books that actually passed Bookmatch's matching and filtering logic rather than Open Library's raw result count.
-
-## API
-
-The Flask backend exposes an internal `/api/books` endpoint used by the frontend. It handles query parameters for search, pagination, sorting, and recommendation-mode requests, then returns normalized JSON to the browser.
-
-The backend also:
-
-- validates Open Library work identifiers
-- normalizes title, author, publication year, cover, edition, subject, and work-link data
-- limits response sizes for search and matching modes
-- caches repeated queries for a short period
-- handles upstream request failures without crashing the application
-
-## Project Structure
-
-```text
-Book-Recommendation/
-├── README.md
-└── book-recommendation/
-    ├── app.py
-    ├── requirements.txt
-    ├── templates/
-    │   ├── index.html
-    │   └── recommendations.html
-    └── static/
-        ├── books.js
-        ├── recommend.js
-        └── style.css
-```
-
-## Run Locally
-
-From the repository root:
+## Try it
 
 ```bash
 cd book-recommendation
 python -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 python app.py
 ```
 
-On Windows, activate the environment with:
+Open http://127.0.0.1:5001.
+
+- Search **Tempting Venom** or **Iced Out**, choose “Use this book,” and select `mm`, `sports`, and `college`.
+- Or enter **mm+sports+college** directly in the same search box. This optional shortcut uses the same preference panel and recommendation endpoint.
+- Add other tropes in “Add a subject or trope.” You can change which three are selected.
+- “Suggest a different author” excludes all books by the starting book's author. Turn it off to include their other books. The starting book itself is always excluded.
+- Open Details for per-concept evidence and a link to the book's author, publisher, retailer, or library reading options.
+
+Google Books works without an app key when public quota is available. Set `GOOGLE_BOOKS_API_KEY` in the server environment to use your own project quota. This is optional; no credentials belong in source control. API failures never remove indexed books from results.
+
+## What changed and why
+
+The old backend searched up to eight aliases for each chosen subject, fetched only 24 results for each alias, and counted which search lists a book appeared in. A book with all three traits could be absent from those broad first pages. Related terms in `genres.json` could also manufacture false matches: “athletes” is not proof of hockey, and “queer romance” is not proof of MM.
+
+The new engine in `book-recommendation/discovery.py` separates **finding candidates** from **establishing matches**:
+
+1. Search complete combinations and pairwise combinations in Open Library. Search Google Books as an independent source, including contextual sport variants for sports requests. Requests are bounded and cached.
+2. Add a versioned, source-backed trope index. The initial index contains **24 books**, with particularly strong coverage of MM campus sports. It stores book-specific factual annotations and source links, not copied full blurbs. The existing 200-entry genre vocabulary is a retrieval aid, **not a 200-book catalog**.
+3. Merge matching title/author records across sources. Keep separate books with the same title but different authors and preserve distinguishing series subtitles. Preserve alternate provider IDs for seed exclusion.
+4. Check each selected concept against reviewed annotations, catalog subjects, or explicit description evidence. Broader retrieval terms cannot award matches. Directional relationships are allowed: hockey implies sports; sports does not imply hockey. New adult does not imply college. Generic LGBTQ+ does not imply MM.
+5. Require the selected MM/FF pairing. For three-concept requests, omit one-concept filler. Rank all-three matches ahead of partials; use evidence quality as the tie-breaker. Cards explicitly identify unconfirmed concepts. Source notes are visible in Details.
+6. Apply existing author/year preferences in the client, then paginate the complete returned pool in groups of 12. No arbitrary 72-book client cutoff.
+
+This is a transparent, content-based recommendation system, not collaborative filtering. Its value is checking a reader's combination across book-level evidence and retaining niche titles that general metadata misses. Goodreads and other specialist sites have their own discovery tools; this project does not claim universal superiority or exhaustive coverage.
+
+## Verified coverage
+
+The following are deterministic results from the bundled index, before excluding the seed or its author. Available live metadata can add further matches.
+
+| Combination | Full matches |
+| --- | ---: |
+| MM + sports + college | 18 |
+| MM + hockey + college | 10 |
+| MM + baseball + college | 3 |
+| MM + friends to lovers + college | 4 |
+| MM + dark romance + mafia romance | 2 |
+
+The 18 include **Iced Out**, **Tempting Venom**, **Hidden Scars**, **Don't You Dare**, and **Never Have I Ever: Had a Bromance with a Teammate**, along with CU Hockey titles, The Jock, The Quarterback, For the Fans, Rule Breaker, and others. `college` describes the setting: Puck Drills & Quick Thrills is a university coach/professor romance, and its evidence says so.
+
+Known coverage limits:
+
+- The source-backed index is small and maintained explicitly. Changing the matching algorithm cannot invent missing trope facts for the rest of the world's books.
+- Live recommendation calls return bounded candidate pools, not every work in either provider. Title search currently combines up to 100 Open Library hits, 40 Google Books hits, and relevant indexed records, then paginates that stable pool. Displayed totals count discovered records, not entire catalog totals.
+- Description matching is conservative phrase matching, not full plot understanding. It ignores common recommendation/author marketing sentences and simple negations; ambiguous plot details should be reviewed and annotated.
+- First publication dates remain unknown where only an edition date is available. Such books are excluded by an era filter. Default “Any year” includes them.
+- Covers and reading links are external and may change. The existing no-cover fallback remains.
+
+## API
+
+- `GET /api/books?q=Iced%20Out&page=1`: merged title/author discovery.
+- `GET /api/recommend?subject=mm&subject=sports&subject=college`: evidence-ranked recommendations.
+- `GET /`: main application.
+- `GET` or `POST /recommendations`: non-JavaScript title search fallback.
+
+Recommendations retain the original book fields and add `conceptMatches`, `conceptEvidence`, `missingConcepts`, `exactMatch`, `evidenceScore`, and `alternateIds`. Response metadata includes `exactCount`, `sources`, `unavailableSources`, and coverage information. A failed live source is reported while indexed recommendations remain available. Unknown title searches return a retryable error when both live providers fail.
+
+## Extend the catalog
+
+Edit `book-recommendation/data/catalog.json` or prepare a separate JSON list with the same schema:
+
+```json
+[
+  {
+    "id": "catalog:stable-book-id",
+    "title": "Book title",
+    "authorNames": ["Author name"],
+    "year": null,
+    "url": "https://publisher.example/book",
+    "evidence": {
+      "college": {
+        "url": "https://publisher.example/book",
+        "note": "The publisher identifies a university setting.",
+        "checked": "2026-09-14"
+      }
+    }
+  }
+]
+```
+
+Use factual, original notes with deep source links. Prefer author/publisher descriptions; distinguish review-based evidence. Do not infer all of a series' tags for every volume or label any queer book MM. Use the same ID to correct a book, and keep first publication dates null until verified.
+
+From the repo root, with Python dependencies installed:
 
 ```bash
-.venv\Scripts\activate
+python scripts/catalog.py --check
+python scripts/catalog.py --import-file additions.json
 ```
 
-Then open the local Flask address shown in the terminal.
+Imports validate the complete replacement before saving. Commit new annotations with their sources. New titles automatically participate in all combinations; there is no title-specific recommendation branch.
 
-## Deployment
+## Tests
 
-Bookmatch is deployed as a Python web service on Render using Gunicorn.
-
-```text
-Root directory: book-recommendation
-Build command:  pip install -r requirements.txt
-Start command:  gunicorn app:app
+```bash
+python -m unittest discover -s tests -v
+npm ci
+npm test
 ```
 
-No API key or application-specific environment variable is required because the app uses Open Library's public API.
+Python tests cover anchor-title recall, exact-first ordering, narrower combinations, false-positive exclusions, cross-source merging, series identity, new unindexed live candidates, outages, metadata parsing, pagination, and endpoint validation. JavaScript tests cover ranking, preferences, seed exclusion, the trope shortcut, and the DOM interaction flow through search, details, save/reload, and Previous/Next.
 
-## Development & Debugging
+To run the DOM integration test against a running Flask server instead of response fixtures:
 
-Building Bookmatch involved more than connecting an API to a search box. Several iterations focused on the behavior of the recommendation system and the difference between raw provider results and useful application results.
+```bash
+BOOKMATCH_TEST_URL=http://127.0.0.1:5001 npm test
+```
 
-Notable improvements included:
-
-- separating ordinary search behavior from recommendation matching
-- normalizing external API data before exposing it to the frontend
-- improving candidate collection for recommendation requests
-- preventing raw Open Library result counts from creating misleading recommendation pagination
-- moving recommendation pagination to the client after filtering and ranking
-- handling duplicate works and seed-book exclusion
-- adding browser persistence for the reading list
-- adding caching and error handling around external requests
-- deploying the Flask application with Gunicorn on Render
-
-## Data Limitations
-
-Bookmatch relies on Open Library's community-maintained metadata. Subject coverage varies considerably between books, particularly for newer, niche, or independently published titles. As a result, a relevant book may exist in Open Library while still lacking enough subject metadata to appear in a highly specific recommendation.
-
-The application treats this as a data-source limitation rather than fabricating missing genres or tropes. Recommendation quality therefore depends both on Bookmatch's matching logic and on the metadata available upstream.
-
-## Future Possibilities
-
-Possible future improvements include evaluating richer metadata providers, expanding explainability around why individual books matched, and adding more discovery controls. These are intentionally outside the current scope so the project remains focused on a complete, usable recommendation workflow.
-
-## Author
-
-**Beryl Koko**
+DOM integration tests do not replace visual browser QA. The hosted browser available during this update could not reach the local preview, so visual rendering was not verified in that browser. No CSS was changed.

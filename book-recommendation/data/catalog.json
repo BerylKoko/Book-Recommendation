@@ -190,7 +190,7 @@
         "checked": "2026-09-14"
       },
       "college": {
-        "url": "https://bookboyfriendaddict.blog/",
+        "url": "https://bookboyfriendaddict.blog/2023/07/03/never-have-i-ever-had-a-bromance-with-a-teammate-by-willow-dixon/",
         "note": "The July 3, 2023 book review identifies this as a college sports romance.",
         "checked": "2026-09-14"
       },
@@ -288,7 +288,8 @@
     "bibliographyUrl": "https://www.abebooks.com/9798686461130/Face-Offs-Cheap-Shots-Hockey/plp",
     "isbns": [
       "9798686461130"
-    ]
+    ],
+    "cover": "https://covers.openlibrary.org/b/isbn/9798686461130-M.jpg?default=false"
   },
   {
     "id": "catalog:goal-lines",
@@ -487,7 +488,8 @@
         "note": "Wes hides his romantic life from public scrutiny.",
         "checked": "2026-09-14"
       }
-    }
+    },
+    "cover": "https://talbauerwrites.com/wp-content/uploads/2021/04/TheJock-cover.jpg"
   },
   {
     "id": "catalog:the-quarterback",
@@ -528,7 +530,8 @@
         "note": "Nick cares for Colton during recovery.",
         "checked": "2026-09-14"
       }
-    }
+    },
+    "cover": "https://talbauerwrites.com/wp-content/uploads/2022/02/TheQuarterback-cover.jpg"
   },
   {
     "id": "catalog:off-sides",
@@ -734,30 +737,30 @@
       "C. E. Ricci"
     ],
     "year": 2024,
-    "url": "https://steamylitbookstore.com/products/fair-catch",
+    "url": "https://steamylitbookstore.com/products/fair-catch-by-ce-ricci",
     "evidence": {
       "mm": {
-        "url": "https://steamylitbookstore.com/products/fair-catch",
+        "url": "https://steamylitbookstore.com/products/fair-catch-by-ce-ricci",
         "note": "The romance follows two male roommates.",
         "checked": "2026-09-14"
       },
       "sports": {
-        "url": "https://steamylitbookstore.com/products/fair-catch",
+        "url": "https://steamylitbookstore.com/products/fair-catch-by-ce-ricci",
         "note": "One lead is a football player.",
         "checked": "2026-09-14"
       },
       "college": {
-        "url": "https://steamylitbookstore.com/products/fair-catch",
+        "url": "https://steamylitbookstore.com/products/fair-catch-by-ce-ricci",
         "note": "The blurb identifies the Leighton U college sports series.",
         "checked": "2026-09-14"
       },
       "football": {
-        "url": "https://steamylitbookstore.com/products/fair-catch",
+        "url": "https://steamylitbookstore.com/products/fair-catch-by-ce-ricci",
         "note": "The blurb identifies a football player.",
         "checked": "2026-09-14"
       },
       "roommates": {
-        "url": "https://steamylitbookstore.com/products/fair-catch",
+        "url": "https://steamylitbookstore.com/products/fair-catch-by-ce-ricci",
         "note": "The two leads become roommates.",
         "checked": "2026-09-14"
       }
@@ -765,7 +768,7 @@
     "isbns": [
       "9781960818157"
     ],
-    "cover": "https://covers.openlibrary.org/b/isbn/9781960818157-M.jpg?default=false"
+    "cover": "https://cdn.shopify.com/s/files/1/0645/3470/8393/files/Image181_cd848b81-d867-423c-a00f-a4e5493c0091.jpg?v=1734621949"
   },
   {
     "id": "catalog:nhie-roommate",
@@ -939,6 +942,7 @@
         "note": "The author explicitly lists found family.",
         "checked": "2026-09-14"
       }
-    }
+    },
+    "cover": "https://talbauerwrites.com/wp-content/uploads/2022/03/YouAndMe.jpg"
   }
 ]

@@ -12,11 +12,11 @@ const authors = b =>
         b.authorNames ||
         String(b.authors || "").split(",")
     )
-        .map(normalise)
+        .map(value => normalise(value).replace(/ /g, ""))
         .filter(
             a =>
                 a &&
-                a !== "unknown author"
+                a !== "unknownauthor"
         );
 
 export function rankBooks(
