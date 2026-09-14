@@ -103,7 +103,7 @@ def get_books(query, page=1, sort="relevance", matching=False):
             "year": item.get("first_publish_year"),
             "cover": cover,
             "editions": item.get("edition_count", 0),
-            "subjects": (item.get("subject") or [])[:24],
+            "subjects": (item.get("subject") or [])[:100],
             "url": book_url
         }
 
