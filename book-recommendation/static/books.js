@@ -16,7 +16,6 @@ try {
 let rows = [];
 let recommendationRows = [];
 let recommendationCandidateCount = 0;
-let recommendationCheckedQueries = 0;
 let seed = null;
 let view = "search";
 let sequence = 0;
@@ -62,9 +61,10 @@ function render(books) {
 function renderRecommendationPage() {
     const start = (page - 1) * RECOMMENDATION_PAGE_SIZE;
     const end = start + RECOMMENDATION_PAGE_SIZE;
+    const totalPages = Math.max(1, Math.ceil(recommendationRows.length / RECOMMENDATION_PAGE_SIZE));
     rows = recommendationRows.slice(start, end);
     render(rows);
-    $("#status").textContent = `${recommendationRows.length} suggestions from ${recommendationCandidateCount} books matching all selected subjects · Page ${page} · ${recommendationCheckedQueries} synonym searches`;
+    $("#status").textContent = `${recommendationRows.length} suggestions · Page ${page} of ${totalPages}`;
     $("#previous").hidden = page <= 1;
     $("#more").hidden = end >= recommendationRows.length;
 }
@@ -158,9 +158,6 @@ async function requestBooks(query, matching = false) {
             recommendationCandidateCount = Number.isFinite(data.candidateCount)
                 ? data.candidateCount
                 : data.books.length;
-            recommendationCheckedQueries = Number.isFinite(data.checkedQueries)
-                ? data.checkedQueries
-                : 0;
             page = 1;
             renderRecommendationPage();
         } else {
