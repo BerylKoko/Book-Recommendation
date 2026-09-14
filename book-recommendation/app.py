@@ -11,6 +11,7 @@ import threading
 import time
 
 import requests
+import discovery
 from flask import Flask, jsonify, render_template, request
 
 
@@ -240,130 +241,7 @@ def get_books(query, page=1, sort="relevance", matching=False):
 
 
 def get_recommendation_candidates(subjects):
-    concepts = [resolve_concept(subject) for subject in subjects]
-    concept_pools = [dict() for _ in concepts]
-    tasks = []
-
-    for concept_index, concept in enumerate(concepts):
-        for alias in concept["aliases"]:
-            tasks.append((concept_index, alias))
-
-    if not tasks:
-        return {
-            "books": [],
-            "candidateCount": 0,
-            "checkedQueries": 0,
-            "totalQueries": 0,
-            "concepts": concepts
-        }
-
-    checked_queries = 0
-
-    def fetch_alias(concept_index, alias):
-        try:
-            result = get_books(
-                subject_query(alias),
-                page=1,
-                matching=True
-            )
-            return concept_index, alias, result
-        except (requests.RequestException, ValueError):
-            return concept_index, alias, None
-
-    workers = min(MAX_FANOUT_WORKERS, len(tasks))
-
-    with ThreadPoolExecutor(max_workers=workers) as executor:
-        futures = [
-            executor.submit(fetch_alias, concept_index, alias)
-            for concept_index, alias in tasks
-        ]
-
-        for future in as_completed(futures):
-            concept_index, alias, result = future.result()
-
-            if result is None:
-                continue
-
-            checked_queries += 1
-            pool = concept_pools[concept_index]
-
-            for book in result["books"]:
-                existing = pool.get(book["id"])
-
-                if existing:
-                    existing["aliases"].add(alias)
-                    existing["book"]["subjects"] = list(
-                        dict.fromkeys(
-                            existing["book"].get("subjects", [])
-                            + book.get("subjects", [])
-                        )
-                    )[:100]
-                else:
-                    pool[book["id"]] = {
-                        "book": book,
-                        "aliases": {alias}
-                    }
-
-    if checked_queries == 0:
-        raise requests.RequestException(
-            "All recommendation searches failed."
-        )
-
-    all_ids = set()
-    for pool in concept_pools:
-        all_ids.update(pool)
-
-    candidates = []
-
-    for book_id in all_ids:
-        matching_entries = []
-
-        for concept, pool in zip(concepts, concept_pools):
-            entry = pool.get(book_id)
-            if entry:
-                matching_entries.append((concept, entry))
-
-        if not matching_entries:
-            continue
-
-        base_book = dict(matching_entries[0][1]["book"])
-        evidence = {}
-        concept_matches = []
-        alias_match_count = 0
-        combined_subjects = []
-
-        for concept, entry in matching_entries:
-            aliases = sorted(entry["aliases"])
-            concept_matches.append(concept["label"])
-            evidence[concept["label"]] = aliases
-            alias_match_count += len(aliases)
-            combined_subjects.extend(
-                entry["book"].get("subjects", [])
-            )
-
-        base_book["subjects"] = list(
-            dict.fromkeys(combined_subjects)
-        )[:100]
-        base_book["conceptMatches"] = concept_matches
-        base_book["conceptEvidence"] = evidence
-        base_book["aliasMatchCount"] = alias_match_count
-        candidates.append(base_book)
-
-    candidates.sort(
-        key=lambda book: (
-            -len(book.get("conceptMatches", [])),
-            -book.get("aliasMatchCount", 0),
-            str(book.get("title", "")).lower()
-        )
-    )
-
-    return {
-        "books": candidates[:MAX_RECOMMENDATION_CANDIDATES],
-        "candidateCount": len(candidates),
-        "checkedQueries": checked_queries,
-        "totalQueries": len(tasks),
-        "concepts": concepts
-    }
+    return discovery.recommend(subjects, GENRE_MAP)
 
 
 @app.route("/")
@@ -382,7 +260,7 @@ def recommendations():
 
     try:
         if query:
-            result = get_books(query)
+            result = discovery.search_books(query)
         else:
             result = {
                 "books": []
@@ -453,12 +331,7 @@ def api_books():
     )
 
     try:
-        result = get_books(
-            query,
-            page,
-            sort,
-            matching
-        )
+        result = discovery.search_books(query, page)
 
         return jsonify(result)
 
