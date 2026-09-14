@@ -7,60 +7,6 @@ export const normalise = s =>
         .trim()
         .replace(/\s+/g, " ");
 
-const CONCEPT_GROUPS = [
-    [
-        "mm", "m m", "m/m", "mm romance", "m/m romance",
-        "male male romance", "male male relationships", "gay romance",
-        "gay love stories", "gay men", "gay men fiction", "gay fiction",
-        "gay relationships", "male homosexuality"
-    ],
-    [
-        "dark romance", "dark romantic fiction", "dark romance fiction",
-        "dark romantic", "obsessive romance", "dangerous romance",
-        "morally gray romance", "morally grey romance"
-    ],
-    [
-        "college", "college romance", "college students", "college life",
-        "university", "university romance", "university students",
-        "campus", "campus romance", "campus life", "undergraduates",
-        "student life", "higher education"
-    ],
-    [
-        "hockey", "ice hockey", "hockey romance", "hockey players",
-        "hockey teams", "professional hockey", "college hockey"
-    ],
-    [
-        "sports romance", "athlete romance", "sports fiction romance",
-        "professional athletes", "college athletes"
-    ],
-    [
-        "enemies to lovers", "rivals to lovers", "hate to love",
-        "romantic rivalry", "adversaries to lovers", "enemies romance"
-    ],
-    [
-        "friends to lovers", "best friends to lovers", "friendship to romance",
-        "friends romance", "childhood friends romance", "platonic to romantic"
-    ],
-    [
-        "fake dating", "fake relationship", "pretend dating",
-        "relationship of convenience", "pretend couple"
-    ],
-    [
-        "forced proximity", "stuck together", "close quarters romance",
-        "forced together", "trapped together romance", "shared space romance"
-    ],
-    [
-        "slow burn", "slow burn romance", "gradual romance",
-        "slow relationship development", "romantic longing"
-    ]
-].map(group => new Set(group.map(normalise)));
-
-const conceptAliases = subject => {
-    const selected = normalise(subject);
-    const group = CONCEPT_GROUPS.find(aliases => aliases.has(selected));
-    return group || new Set([selected]);
-};
-
 const authors = b =>
     (
         b.authorNames ||
@@ -82,9 +28,9 @@ export function rankBooks(
         era = "any"
     } = {}
 ) {
-    const concepts = subjects.map(subject => ({
+    const wanted = subjects.map(subject => ({
         label: subject,
-        aliases: conceptAliases(subject)
+        normalised: normalise(subject)
     }));
 
     const seen = new Set();
@@ -103,40 +49,35 @@ export function rankBooks(
             return true;
         })
         .map(b => {
-            const bookSubjects = new Set(
-                (b.subjects || []).map(normalise)
+            const suppliedMatches = new Set(
+                (b.conceptMatches || []).map(normalise)
             );
 
-            const matches = concepts
-                .filter(concept =>
-                    [...concept.aliases].some(alias => bookSubjects.has(alias))
+            const matches = wanted
+                .filter(subject =>
+                    suppliedMatches.has(subject.normalised)
                 )
-                .map(concept => concept.label);
+                .map(subject => subject.label);
 
-            const searchMatchCount = Array.isArray(b.searchMatches)
-                ? new Set(
-                    b.searchMatches
-                        .map(normalise)
-                        .filter(Boolean)
-                ).size
-                : 0;
-
-            const matchScore = concepts.length
-                ? matches.length / concepts.length
+            const matchTotal = wanted.length;
+            const matchCount = matches.length;
+            const matchScore = matchTotal
+                ? matchCount / matchTotal
                 : 0;
 
             return {
                 ...b,
                 matches,
-                matchCount: matches.length,
-                matchTotal: concepts.length,
+                matchCount,
+                matchTotal,
                 matchScore,
-                searchMatchCount
+                aliasMatchCount: Number(b.aliasMatchCount) || 0
             };
         })
         .filter(
             b =>
-                b.matchScore > 0 &&
+                b.matchTotal > 0 &&
+                b.matchCount === b.matchTotal &&
                 (
                     !newAuthor ||
                     !authors(b).some(
@@ -157,8 +98,7 @@ export function rankBooks(
         )
         .sort(
             (a, b) =>
-                b.matchScore - a.matchScore ||
-                b.searchMatchCount - a.searchMatchCount ||
+                b.aliasMatchCount - a.aliasMatchCount ||
                 a.title.localeCompare(b.title)
         );
 }
