@@ -45,11 +45,33 @@ function buildConcepts(subjects, genreMap) {
 }
 
 function buildSubjectQuery(concepts) {
-    return [...new Set(concepts.flatMap((concept) => concept.terms))]
-        .map((term) => term.replace(/["\\():]/g, " ").trim())
-        .filter(Boolean)
-        .map((term) => `subject:"${term}"`)
-        .join(" OR ");
+    const cleanedGroups = concepts.map((concept) =>
+        concept.terms
+            .map((term) => term.replace(/["\\():]/g, " ").trim())
+            .filter(Boolean)
+    );
+
+    const selected = [];
+    const seen = new Set();
+    let index = 0;
+
+    while (cleanedGroups.some((group) => index < group.length)) {
+        for (const group of cleanedGroups) {
+            const term = group[index];
+            if (!term || seen.has(term)) continue;
+
+            const clause = `subject:"${term}"`;
+            const nextQuery = [...selected, clause].join(" OR ");
+
+            if (nextQuery.length <= 190) {
+                selected.push(clause);
+                seen.add(term);
+            }
+        }
+        index++;
+    }
+
+    return selected.join(" OR ");
 }
 
 let saved = [];
