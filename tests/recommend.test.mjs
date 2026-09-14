@@ -12,7 +12,7 @@ test('full matches outrank partials; evidence wins over repeated aliases', () =>
 });
 test('same book from another provider, author filters, and publication era work', () => {
  const seed={id:'/works/OL1W',authorNames:['C. E. Ricci']};
- const rows=[candidate('catalog:seed',['mm'],{alternateIds:['/works/OL1W']}),candidate('same-author',['mm'],{authorNames:['C. E. Ricci']}),candidate('other',['mm'])];
+ const rows=[candidate('google:seed',['mm'],{alternateIds:['/works/OL1W']}),candidate('same-author',['mm'],{authorNames:['C. E. Ricci']}),candidate('other',['mm'])];
  assert.deepEqual(rankBooks(rows,seed,['mm']).map(b=>b.id),['other']);
  assert.equal(rankBooks(rows,seed,['mm'],{newAuthor:false}).length,2);
  assert.equal(rankBooks(rows,seed,['mm'],{era:'classic'}).length,0);
@@ -34,8 +34,8 @@ test('DOM flow: search, seed, tags, pages, evidence links, and persistent readin
  w.HTMLDialogElement.prototype.showModal=function(){this.open=true};
  w.HTMLDialogElement.prototype.close=function(){this.open=false};
  w.rankBooks=rankBooks; w.parseTropeQuery=parseTropeQuery;
- const seed=candidate('catalog:seed',[],{title:'Tempting Venom',authors:'Rina Kent',authorNames:['Rina Kent'],subjects:['mm','sports','college']});
- const books=Array.from({length:18},(_,i)=>candidate(`catalog:book-${i}`,['mm','sports','college'],{subjects:['mm','sports','college'],url:'https://example.org/book',conceptEvidence:{mm:{note:'A male/male romance.',url:'https://example.org/evidence'}}}));
+ const seed=candidate('google:seed',[],{title:'Tempting Venom',authors:'Rina Kent',authorNames:['Rina Kent'],subjects:['mm','sports','college']});
+ const books=Array.from({length:18},(_,i)=>candidate(`google:book-${i}`,['mm','sports','college'],{subjects:['mm','sports','college'],url:'https://example.org/book',conceptEvidence:{mm:{note:'A male/male romance.',url:'https://example.org/evidence'}}}));
  const calls=[];
  const live=process.env.BOOKMATCH_TEST_URL;
  w.fetch=async path => {
@@ -79,19 +79,16 @@ test('DOM flow: search, seed, tags, pages, evidence links, and persistent readin
  assert.deepEqual([...w.document.querySelectorAll('.book h3')].map(el=>el.textContent),firstPage);
  $('#saved').click();
  assert.equal(w.document.querySelectorAll('.book').length,1);
- // Reinitialise the application with the same device storage, like a reload.
  const reload=new JSDOM(html,{url:'http://localhost/',runScripts:'outside-only'});
  reload.window.localStorage.setItem('bookmatch:reading-list:v1',stored);
  reload.window.rankBooks=rankBooks; reload.window.parseTropeQuery=parseTropeQuery;
  reload.window.eval(source);
  assert.equal(reload.window.document.querySelector('#count').textContent,'1');
  reload.window.close();
- // Direct combination uses the same API and preference controls.
  $('#query').value='mm+sports+college';
  $('#search-form').dispatchEvent(new w.Event('submit',{cancelable:true})); await settled();
  assert.ok(calls.at(-1).includes('subject=mm&subject=sports&subject=college'));
  assert.ok($('#status').textContent.includes('18 full matches'));
- // Add an arbitrary niche trait without changing the page or executing HTML.
  $('#custom-trait').value='<img src=x onerror=alert(1)>';
  $('#add-trait').click();
  assert.equal($('#traits img'),null);
