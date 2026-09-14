@@ -2,7 +2,6 @@ import { rankBooks } from "./recommend.js";
 const $ = (selector) => document.querySelector(selector);
 const KEY = "bookmatch:reading-list:v1";
 const RECOMMENDATION_PAGE_SIZE = 12;
-const MAX_MATCH_PAGES = 3;
 const MAX_RECOMMENDATION_CANDIDATES = 72;
 const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (character) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[character]);
 
@@ -17,7 +16,7 @@ try {
 let rows = [];
 let recommendationRows = [];
 let recommendationCandidateCount = 0;
-let recommendationCheckedPages = 0;
+let recommendationCheckedQueries = 0;
 let seed = null;
 let view = "search";
 let sequence = 0;
@@ -65,7 +64,7 @@ function renderRecommendationPage() {
     const end = start + RECOMMENDATION_PAGE_SIZE;
     rows = recommendationRows.slice(start, end);
     render(rows);
-    $("#status").textContent = `${recommendationRows.length} suggestions from ${recommendationCandidateCount} catalog results · Page ${page} · Checked ${recommendationCheckedPages} ${recommendationCheckedPages === 1 ? "catalog page" : "catalog pages"}`;
+    $("#status").textContent = `${recommendationRows.length} suggestions from ${recommendationCandidateCount} books matching all selected subjects · Page ${page} · ${recommendationCheckedQueries} synonym searches`;
     $("#previous").hidden = page <= 1;
     $("#more").hidden = end >= recommendationRows.length;
 }
@@ -98,8 +97,11 @@ function detail(book) {
     $("#detail").showModal();
 }
 
-async function fetchBookPage(query, requestedPage, matching, signal) {
-    const params = new URLSearchParams({q:query,page:String(requestedPage),mode:matching ? "match" : "search"});
+async function fetchBookPage(query, requestedPage, signal) {
+    const params = new URLSearchParams({
+        q: query,
+        page: String(requestedPage)
+    });
     const response = await fetch("/api/books?" + params, {signal});
     const data = await response.json();
     if (!response.ok) throw Error(data.error || `Catalog returned ${response.status}.`);
@@ -107,8 +109,15 @@ async function fetchBookPage(query, requestedPage, matching, signal) {
     return data;
 }
 
-const subjectQuery = (subject) =>
-    `subject:${subject.replace(/["\\():]/g, " ").trim().split(/\s+/).join(" ")}`;
+async function fetchRecommendations(subjects, signal) {
+    const params = new URLSearchParams();
+    subjects.forEach((subject) => params.append("subject", subject));
+    const response = await fetch("/api/recommend?" + params, {signal});
+    const data = await response.json();
+    if (!response.ok) throw Error(data.error || `Recommendations returned ${response.status}.`);
+    if (!Array.isArray(data.books)) throw Error("Unexpected recommendation response.");
+    return data;
+}
 
 async function requestBooks(query, matching = false) {
     if (!query) return;
@@ -124,105 +133,39 @@ async function requestBooks(query, matching = false) {
     const id = ++sequence;
     setView(matching ? "matches" : "search");
     $("#back-to-search").hidden = !matching;
-    $("#status").textContent = matching ? "Finding related books…" : "Searching the catalog…";
+    $("#status").textContent = matching ? "Searching related tropes…" : "Searching the catalog…";
     $("#books").setAttribute("aria-busy", "true");
     $("#previous").hidden = true;
     $("#more").hidden = true;
     $("#shelf-title").textContent = matching ? "Related books" : "Choose a starting book";
-    const timeout = setTimeout(() => abort.abort(), 16000);
+    const timeout = setTimeout(() => abort.abort(), matching ? 30000 : 16000);
     try {
         if (matching) {
-            const queries = traits.map(subjectQuery);
-            const firstPages = await Promise.all(
-                queries.map((subjectSearch) =>
-                    fetchBookPage(subjectSearch, 1, true, abort.signal)
-                )
-            );
+            const data = await fetchRecommendations(traits, abort.signal);
             if (id !== sequence) return;
 
-            const limit = firstPages[0]?.limit || 24;
-            const pagesPerSubject = Math.min(
-                MAX_MATCH_PAGES,
-                Math.max(
-                    1,
-                    Math.ceil(
-                        MAX_RECOMMENDATION_CANDIDATES /
-                        (limit * traits.length)
-                    )
-                )
-            );
-
-            const extraRequests = [];
-            firstPages.forEach((data, subjectIndex) => {
-                const subjectLimit = data.limit || limit;
-                const availablePages = Math.min(
-                    pagesPerSubject,
-                    Math.max(1, Math.ceil(data.total / subjectLimit))
-                );
-
-                for (let requestedPage = 2; requestedPage <= availablePages; requestedPage++) {
-                    extraRequests.push(
-                        fetchBookPage(
-                            queries[subjectIndex],
-                            requestedPage,
-                            true,
-                            abort.signal
-                        ).then((pageData) => ({subjectIndex, pageData}))
-                    );
-                }
-            });
-
-            const extraPages = await Promise.all(extraRequests);
-            if (id !== sequence) return;
-
-            const candidatesById = new Map();
-            const addCandidates = (books, subject) => {
-                for (const book of books) {
-                    const existing = candidatesById.get(book.id);
-                    if (existing) {
-                        if (!existing.searchMatches.includes(subject)) {
-                            existing.searchMatches.push(subject);
-                        }
-                    } else {
-                        candidatesById.set(book.id, {
-                            ...book,
-                            searchMatches: [subject]
-                        });
-                    }
-                }
-            };
-
-            firstPages.forEach((data, subjectIndex) => {
-                addCandidates(data.books, traits[subjectIndex]);
-            });
-
-            extraPages.forEach(({subjectIndex, pageData}) => {
-                addCandidates(pageData.books, traits[subjectIndex]);
-            });
-
-            const candidates = [...candidatesById.values()];
             const ranked = rankBooks(
-                candidates,
+                data.books,
                 matchSeed,
                 traits,
                 preferences
             );
 
-            total = firstPages.reduce(
-                (sum, data) => sum + (data.total || 0),
-                0
-            );
             recommendationRows = ranked.slice(
                 0,
                 MAX_RECOMMENDATION_CANDIDATES
             );
-            recommendationCandidateCount = candidates.length;
-            recommendationCheckedPages = firstPages.length + extraPages.length;
+            recommendationCandidateCount = Number.isFinite(data.candidateCount)
+                ? data.candidateCount
+                : data.books.length;
+            recommendationCheckedQueries = Number.isFinite(data.checkedQueries)
+                ? data.checkedQueries
+                : 0;
             page = 1;
             renderRecommendationPage();
         } else {
             recommendationRows = [];
-            const data = await fetchBookPage(query, page, false, abort.signal);
+            const data = await fetchBookPage(query, page, abort.signal);
             if (id !== sequence) return;
             rows = data.books;
             total = data.total;
