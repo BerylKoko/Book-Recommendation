@@ -46,12 +46,6 @@ export function rankBooks(
             return true;
         })
         .map(b => {
-            const searchMatches = Array.isArray(b.searchMatches)
-                ? b.searchMatches.filter(
-                    subject => wanted.has(normalise(subject))
-                )
-                : [];
-
             const exactMatches = [
                 ...new Set(
                     (b.subjects || []).filter(
@@ -63,21 +57,26 @@ export function rankBooks(
                 )
             ];
 
-            const matches = searchMatches.length
-                ? [...new Set(searchMatches)]
-                : exactMatches;
+            const searchMatchCount = Array.isArray(b.searchMatches)
+                ? new Set(
+                    b.searchMatches
+                        .map(normalise)
+                        .filter(subject => wanted.has(subject))
+                ).size
+                : 0;
 
             const matchScore =
                 wanted.size
-                    ? matches.length / wanted.size
+                    ? exactMatches.length / wanted.size
                     : 0;
 
             return {
                 ...b,
-                matches,
-                matchCount: matches.length,
+                matches: exactMatches,
+                matchCount: exactMatches.length,
                 matchTotal: wanted.size,
-                matchScore
+                matchScore,
+                searchMatchCount
             };
         })
         .filter(
@@ -105,6 +104,7 @@ export function rankBooks(
         .sort(
             (a, b) =>
                 b.matchScore - a.matchScore ||
+                b.searchMatchCount - a.searchMatchCount ||
                 a.title.localeCompare(
                     b.title
                 )
