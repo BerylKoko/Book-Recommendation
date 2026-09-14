@@ -323,11 +323,17 @@ def merge_two(base, incoming):
         int(incoming.get("providerRank", 9999)),
     )
 
-    all_covers = unique([
-        incoming.get("cover"), *incoming.get("coverFallbacks", []),
-        row.get("cover"), *row.get("coverFallbacks", []),
-        isbn_cover(row["isbns"]),
-    ])
+    if incoming.get("source") == "Google Books":
+        cover_order = [
+            incoming.get("cover"), *incoming.get("coverFallbacks", []),
+            row.get("cover"), *row.get("coverFallbacks", []),
+        ]
+    else:
+        cover_order = [
+            row.get("cover"), *row.get("coverFallbacks", []),
+            incoming.get("cover"), *incoming.get("coverFallbacks", []),
+        ]
+    all_covers = unique([*cover_order, isbn_cover(row["isbns"])])
     row["cover"] = all_covers[0] if all_covers else None
     row["coverFallbacks"] = all_covers[1:]
 
@@ -426,8 +432,11 @@ def search_books(query, page=1, limit=SEARCH_PAGE_SIZE):
         for book in books:
             book["searchScore"] = search_score(book, query)
         books.sort(key=lambda book: (-book["searchScore"], normalise(book["title"])))
-        unavailable = sorted({r["provider"] for r in responses if not r["ok"]})
-        available = sorted({r["provider"] for r in responses if r["ok"]})
+        available_set = {r["provider"] for r in responses if r["ok"]}
+        unavailable = sorted(
+            {r["provider"] for r in responses if not r["ok"]} - available_set
+        )
+        available = sorted(available_set)
         if not books and not available:
             raise requests.RequestException("Book catalogs are temporarily unavailable.")
         return {"books": books, "unavailableSources": unavailable, "sources": available}
@@ -467,19 +476,32 @@ def retrieval_terms(concept, genre_map=None):
     return unique(normalise(term) for term in terms)[:8]
 
 
-def query_phrase(concept):
-    preferred = {
-        "mm": '"gay romance"',
-        "ff": '"lesbian romance"',
-        "sports": '"sports romance"',
-        "dark romance": '"dark romance"',
-        "enemies to lovers": '"enemies to lovers"',
-        "friends to lovers": '"friends to lovers"',
-        "fake dating": '"fake dating"',
-        "forced proximity": '"forced proximity"',
-        "slow burn": '"slow burn"',
+def quote_term(term):
+    term = str(term).strip()
+    return f'"{term}"' if " " in term or "/" in term else term
+
+
+def query_variants(concept, genre_map=None):
+    special = {
+        "mm": ["mm romance", "gay romance", "m/m romance", "male male romance"],
+        "ff": ["lesbian romance", "f/f romance", "sapphic romance"],
+        "sports": ["sports romance", "athlete romance", "sports"],
+        "college": ["college", "university", "campus"],
+        "dark romance": ["dark romance", "dark romantic fiction"],
+        "enemies to lovers": ["enemies to lovers", "rivals to lovers"],
+        "friends to lovers": ["friends to lovers", "best friends to lovers"],
+        "fake dating": ["fake dating", "fake relationship"],
+        "forced proximity": ["forced proximity", "stuck together"],
+        "slow burn": ["slow burn", "slow burn romance"],
     }
-    return preferred.get(concept, f'"{concept}"' if " " in concept else concept)
+    raw = special.get(concept, retrieval_terms(concept, genre_map)[:3] or [concept])
+    if concept in ("mm", "ff"):
+        return unique(raw)
+    return [quote_term(term) for term in unique(raw)]
+
+
+def query_phrase(concept, genre_map=None):
+    return query_variants(concept, genre_map)[0]
 
 
 def build_queries(subjects, genre_map=None):
@@ -494,31 +516,37 @@ def build_queries(subjects, genre_map=None):
         if query and item not in tasks:
             tasks.append(item)
 
-    base = " ".join(query_phrase(concept) for concept in concepts)
-    add("Google Books", base, concepts)
-
-    alternate = []
-    for concept in concepts:
-        terms = retrieval_terms(concept, genre_map)
-        if len(terms) > 1:
-            alternate.append(f'"{terms[1]}"' if " " in terms[1] else terms[1])
-        else:
-            alternate.append(query_phrase(concept))
-    add("Google Books", " ".join(alternate), concepts)
+    variants = {concept: query_variants(concept, genre_map) for concept in concepts}
+    all_variant_count = 2 if "sports" in concepts else 3
+    for index in range(all_variant_count):
+        query = " ".join(
+            variants[concept][index % len(variants[concept])]
+            for concept in concepts
+        )
+        add("Google Books", query, concepts)
 
     if "sports" in concepts and not any(sport in concepts for sport in SPORTS):
         others = [concept for concept in concepts if concept != "sports"]
-        for sport in ("hockey", "football", "baseball", "basketball", "soccer"):
-            query_parts = [query_phrase(concept) for concept in others] + [sport]
+        for index, sport in enumerate(("hockey", "football", "baseball", "basketball", "soccer")):
+            query_parts = [
+                variants[concept][index % len(variants[concept])]
+                for concept in others
+            ]
+            query_parts.append(sport)
             add("Google Books", " ".join(query_parts), [*others, "sports"])
 
-    add("Open Library", base)
+    open_library_query = " ".join(query_phrase(concept, genre_map) for concept in concepts)
+    add("Open Library", open_library_query)
 
     if len(concepts) == 3 and len(tasks) < MAX_RECOMMENDATION_QUERIES:
         pairs = ((0, 1), (0, 2), (1, 2))
         for left, right in pairs:
             pair = [concepts[left], concepts[right]]
-            add("Google Books", " ".join(query_phrase(c) for c in pair), pair)
+            add(
+                "Google Books",
+                " ".join(query_phrase(concept, genre_map) for concept in pair),
+                pair,
+            )
             if len(tasks) >= MAX_RECOMMENDATION_QUERIES:
                 break
 
@@ -528,7 +556,7 @@ def build_queries(subjects, genre_map=None):
 def explicit_mm_evidence(text):
     text = normalise(text)
     return bool(re.search(
-        r"\b(m m|mm romance|gay romance|gay men|male male|two men|two guys|two male)\b",
+        r"\b(m m|mm romance|gay romance|gay men|male male|male x male|two men|two guys|two male)\b",
         text,
     ))
 
@@ -540,13 +568,30 @@ def concept_evidence(book, concept):
     implied_children = [child for child, parents in IMPLIES.items() if concept in parents]
     terms.extend(implied_children)
 
+    joined_subjects = " ".join(str(subject) for subject in subjects)
+    if concept == "mm" and (
+        explicit_mm_evidence(joined_subjects)
+        or (contains(joined_subjects, "gay") and contains(joined_subjects, "romance"))
+    ):
+        return {
+            "kind": "category",
+            "note": "Catalog categories identify gay/M/M romance.",
+            "url": book.get("url", ""),
+        }
+    if concept == "ff" and (
+        contains(joined_subjects, "lesbian romance")
+        or contains(joined_subjects, "sapphic romance")
+        or (contains(joined_subjects, "lesbian") and contains(joined_subjects, "romance"))
+    ):
+        return {
+            "kind": "category",
+            "note": "Catalog categories identify lesbian/F/F romance.",
+            "url": book.get("url", ""),
+        }
+
     for subject in subjects:
         subject_n = normalise(subject)
         if canonical(subject) == concept:
-            return {"kind": "category", "note": subject, "url": book.get("url", "")}
-        if concept == "mm" and (explicit_mm_evidence(subject_n) or " romance gay " in f" {subject_n} "):
-            return {"kind": "category", "note": subject, "url": book.get("url", "")}
-        if concept == "ff" and any(token in subject_n for token in ("lesbian romance", "sapphic romance", "f f romance")):
             return {"kind": "category", "note": subject, "url": book.get("url", "")}
         if any(contains(subject_n, term) for term in terms):
             return {"kind": "category", "note": subject, "url": book.get("url", "")}
