@@ -4,6 +4,8 @@ Bookmatch is a Flask + vanilla JavaScript book-discovery app by **Beryl Koko**. 
 
 **Live demo:** https://book-recommendation-1-e4km.onrender.com/
 
+**Portfolio:** [beryl-koko-portfolio.onrender.com](https://beryl-koko-portfolio.onrender.com/)
+
 > The demo uses a free Render service, so the first request after inactivity can take a little longer while the service wakes up.
 
 ## What the project is trying to solve
